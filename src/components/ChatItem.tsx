@@ -56,7 +56,14 @@ export const ChatItem = ({ chat, isActive, onClick }: ChatItemProps) => {
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-1">
-          <h3 className="text-white font-medium truncate">{chat.name}</h3>
+          <div className="flex items-center min-w-0">
+            <h3 className="text-white font-medium truncate">{chat.name}</h3>
+            {chat.user?.startParam && (
+              <span className="ml-2 px-2 py-0.5 text-[10px] font-bold bg-purple-600 text-white rounded-full flex-shrink-0 shadow-sm">
+                {chat.user?.startParam}
+              </span>
+            )}
+          </div>
           <span className="text-gray-400 text-xs flex-shrink-0 ml-2">
             {formatTime(chat.lastMessageTime)}
           </span>

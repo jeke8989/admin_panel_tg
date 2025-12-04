@@ -7,16 +7,20 @@ import { BotList } from '../components/BotList';
 import { BotDetails } from '../components/BotDetails';
 import { AddBotModal } from '../components/AddBotModal';
 import { DeleteBotModal } from '../components/DeleteBotModal';
+import { BroadcastsPage } from './BroadcastsPage';
+import { BroadcastDetails } from '../components/BroadcastDetails';
+import { getBroadcastById, getBroadcastStatistics, sendBroadcast, deleteBroadcast, copyBroadcast } from '../utils/api';
+import type { Broadcast, BroadcastStatistics } from '../types';
 import { api, sendMessageWithMedia, markChatAsRead, deleteMessage, clearChatHistory, getBots, createBot, deleteBot, toggleBotStatus, getBotStatistics, getAllTags } from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { Chat, Message, MessageReaction, Bot, BotStatistics, Tag } from '../types';
 import { MessageType } from '../types';
 
 export const ChatsPage = () => {
-  const { logout } = useAuth();
+  const { logout, admin } = useAuth();
   
   // Tab state
-  const [activeTab, setActiveTab] = useState<'chats' | 'bots'>('chats');
+  const [activeTab, setActiveTab] = useState<'chats' | 'bots' | 'broadcasts'>('chats');
   
   // Chats state
   const [chats, setChats] = useState<Chat[]>([]);
@@ -38,6 +42,11 @@ export const ChatsPage = () => {
   const [botToDelete, setBotToDelete] = useState<Bot | null>(null);
   const [isAddingBot, setIsAddingBot] = useState(false);
   const [isDeletingBot, setIsDeletingBot] = useState(false);
+
+  // Broadcasts state
+  const [activeBroadcastId, setActiveBroadcastId] = useState<string | null>(null);
+  const [selectedBroadcast, setSelectedBroadcast] = useState<Broadcast | null>(null);
+  const [broadcastStatistics, setBroadcastStatistics] = useState<BroadcastStatistics | null>(null);
 
   useEffect(() => {
     loadTags();
@@ -112,7 +121,14 @@ export const ChatsPage = () => {
       interface ChatResponse {
         id: string;
         title?: string | null;
-        user?: { firstName?: string };
+        user?: { 
+          id?: string;
+          firstName?: string; 
+          startParam?: string | null;
+          telegramId?: number;
+          username?: string | null;
+          lastName?: string | null;
+        };
         lastMessage?: { text?: string };
         lastMessageAt?: string | null;
         bot?: { username?: string | null };
@@ -120,19 +136,34 @@ export const ChatsPage = () => {
         unreadCount?: number;
         tags?: Tag[];
       }
-      const chatsData = response.data.map((chat: ChatResponse) => ({
-        id: chat.id,
-        name: chat.title || chat.user?.firstName || 'Без названия',
-        avatar: chat.user?.firstName?.[0]?.toUpperCase() || '?',
-        lastMessage: chat.lastMessage?.text || '',
-        lastMessageTime: chat.lastMessageAt
-          ? new Date(chat.lastMessageAt)
-          : undefined,
-        unreadCount: chat.unreadCount || 0,
-        botUsername: chat.bot?.username,
-        isBotBlocked: chat.isBotBlocked || false,
-        tags: chat.tags || [],
-      }));
+      const chatsData = response.data.map((chat: ChatResponse) => {
+        const mappedChat = {
+          id: chat.id,
+          name: chat.title || chat.user?.firstName || 'Без названия',
+          avatar: chat.user?.firstName?.[0]?.toUpperCase() || '?',
+          lastMessage: chat.lastMessage?.text || '',
+          lastMessageTime: chat.lastMessageAt
+            ? new Date(chat.lastMessageAt)
+            : undefined,
+          unreadCount: chat.unreadCount || 0,
+          botUsername: chat.bot?.username,
+          isBotBlocked: chat.isBotBlocked || false,
+          tags: chat.tags || [],
+          user: chat.user ? {
+            id: chat.user.id || '',
+            telegramId: chat.user.telegramId || 0,
+            username: chat.user.username || null,
+            firstName: chat.user.firstName || '',
+            lastName: chat.user.lastName || null,
+            startParam: chat.user.startParam || null,
+          } : undefined,
+        };
+        // Отладка: выводим startParam если он есть
+        if (mappedChat.user?.startParam) {
+          console.log(`[DEBUG] Chat ${mappedChat.name} has startParam:`, mappedChat.user.startParam);
+        }
+        return mappedChat;
+      });
       setChats(chatsData);
     } catch (error) {
       console.error('Error loading chats:', error);
@@ -654,8 +685,103 @@ export const ChatsPage = () => {
     }
   };
 
-  const handleTabChange = (tab: 'chats' | 'bots') => {
+  const handleTabChange = (tab: 'chats' | 'bots' | 'broadcasts') => {
+    // Пользователь с ролью user видит только вкладку чатов
+    if (admin?.role === 'user' && tab === 'bots') {
+      return;
+    }
     setActiveTab(tab);
+    // Сбрасываем выбранные элементы при переключении табов
+    if (tab !== 'broadcasts') {
+      setActiveBroadcastId(null);
+      setSelectedBroadcast(null);
+      setBroadcastStatistics(null);
+    }
+    // При открытии таба "Рассылки" всегда очищаем выбор
+    if (tab === 'broadcasts') {
+      setActiveBroadcastId(null);
+      setSelectedBroadcast(null);
+      setBroadcastStatistics(null);
+    }
+    if (tab !== 'bots') {
+      setActiveBotId(null);
+      setBotStatistics(null);
+    }
+    if (tab !== 'chats') {
+      setActiveChatId(null);
+    }
+  };
+
+  const handleBroadcastSelect = async (id: string) => {
+    setActiveBroadcastId(id);
+    try {
+      const [broadcast, statistics] = await Promise.all([
+        getBroadcastById(id),
+        getBroadcastStatistics(id),
+      ]);
+      setSelectedBroadcast(broadcast);
+      setBroadcastStatistics(statistics);
+    } catch (error) {
+      console.error('Error loading broadcast details:', error);
+    }
+  };
+
+  const handleSendBroadcast = async (id: string) => {
+    try {
+      await sendBroadcast(id);
+      if (activeBroadcastId === id) {
+        const [broadcast, statistics] = await Promise.all([
+          getBroadcastById(id),
+          getBroadcastStatistics(id),
+        ]);
+        setSelectedBroadcast(broadcast);
+        setBroadcastStatistics(statistics);
+      }
+    } catch (error) {
+      console.error('Error sending broadcast:', error);
+      alert('Ошибка при отправке рассылки');
+    }
+  };
+
+  const handleDeleteBroadcast = async (id: string) => {
+    // Подтверждение удаления
+    if (!confirm('Вы уверены, что хотите удалить эту рассылку?')) {
+      return;
+    }
+    
+    try {
+      await deleteBroadcast(id);
+      
+      // Очищаем состояние если удаляемая рассылка была выбрана
+      if (activeBroadcastId === id) {
+        setActiveBroadcastId(null);
+        setSelectedBroadcast(null);
+        setBroadcastStatistics(null);
+      }
+      
+      // Вызываем callback для обновления списка рассылок в BroadcastsPage
+      // Это обновит список через loadBroadcasts внутри BroadcastsPage
+      // Но нам нужно найти способ вызвать это из ChatsPage
+      // Пока что просто очищаем состояние - список обновится при следующем открытии таба
+    } catch (error) {
+      console.error('Error deleting broadcast:', error);
+      const errorMessage = error && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : 'Ошибка при удалении рассылки';
+      alert(errorMessage || 'Ошибка при удалении рассылки');
+    }
+  };
+
+  const handleCopyBroadcast = async (id: string) => {
+    try {
+      const copiedBroadcast = await copyBroadcast(id);
+      alert('Рассылка успешно скопирована!');
+      // Выбираем скопированную рассылку
+      await handleBroadcastSelect(copiedBroadcast.id);
+    } catch (error) {
+      console.error('Error copying broadcast:', error);
+      alert('Ошибка при копировании рассылки');
+    }
   };
 
   const handleBotSelect = (botId: string) => {
@@ -742,7 +868,7 @@ export const ChatsPage = () => {
       <div className="flex-1 flex overflow-hidden">
         <div className="w-1/3 min-w-[320px] max-w-[400px] flex flex-col border-r border-gray-700">
           {/* Табы */}
-          <Tabs activeTab={activeTab} onTabChange={handleTabChange} />
+          <Tabs activeTab={activeTab} onTabChange={handleTabChange} role={admin?.role} />
           
           {/* Контент в зависимости от активного таба */}
           {activeTab === 'chats' ? (
@@ -763,6 +889,22 @@ export const ChatsPage = () => {
                 unreadCounts={unreadCountsByCategory}
               />
             )
+          ) : activeTab === 'broadcasts' ? (
+            <BroadcastsPage 
+              activeBroadcastId={activeBroadcastId}
+              onBroadcastSelect={handleBroadcastSelect}
+              onBroadcastDeleted={(id) => {
+                // Очищаем состояние если удаляемая рассылка была выбрана
+                if (activeBroadcastId === id) {
+                  setActiveBroadcastId(null);
+                  setSelectedBroadcast(null);
+                  setBroadcastStatistics(null);
+                }
+              }}
+              onBroadcastCopied={(id) => {
+                handleBroadcastSelect(id);
+              }}
+            />
           ) : (
             <BotList
               bots={bots}
@@ -776,26 +918,50 @@ export const ChatsPage = () => {
         {/* Правая панель */}
         <div className="flex-1 h-full overflow-hidden">
           {activeTab === 'chats' ? (
-          <ChatWindow
-            chat={activeChat}
-            messages={activeChatMessages}
-            onSendMessage={handleSendMessage}
-            onDeleteChat={handleDeleteChat}
-            onClearHistory={handleClearHistory}
-            onDeleteMessage={handleDeleteMessageClick}
-            onMessageUpdate={handleMessageUpdate}
-            onChatUpdate={handleChatUpdate}
-            onTagFilterChange={setSelectedTagFilter}
-            onReloadChats={loadChats}
-            scrollTrigger={scrollTrigger}
-          />
+            <ChatWindow
+              chat={activeChat}
+              messages={activeChatMessages}
+              onSendMessage={handleSendMessage}
+              onDeleteChat={handleDeleteChat}
+              onClearHistory={handleClearHistory}
+              onDeleteMessage={handleDeleteMessageClick}
+              onMessageUpdate={handleMessageUpdate}
+              onChatUpdate={handleChatUpdate}
+              onTagFilterChange={setSelectedTagFilter}
+              onReloadChats={loadChats}
+              scrollTrigger={scrollTrigger}
+            />
+          ) : activeTab === 'broadcasts' ? (
+            selectedBroadcast ? (
+              <BroadcastDetails
+                broadcast={selectedBroadcast}
+                statistics={broadcastStatistics}
+                onSend={() => selectedBroadcast?.id && handleSendBroadcast(selectedBroadcast.id)}
+                onDelete={() => selectedBroadcast?.id && handleDeleteBroadcast(selectedBroadcast.id)}
+                onCopy={() => selectedBroadcast?.id && handleCopyBroadcast(selectedBroadcast.id)}
+                onRefresh={async () => {
+                  if (activeBroadcastId) {
+                    const [broadcast, statistics] = await Promise.all([
+                      getBroadcastById(activeBroadcastId),
+                      getBroadcastStatistics(activeBroadcastId),
+                    ]);
+                    setSelectedBroadcast(broadcast);
+                    setBroadcastStatistics(statistics);
+                  }
+                }}
+              />
+            ) : (
+              <div className="h-full w-full flex items-center justify-center bg-gray-900 text-gray-500">
+                <p>Выберите рассылку для просмотра деталей</p>
+              </div>
+            )
           ) : (
             <BotDetails
               bot={bots.find((b) => b.id === activeBotId) || null}
               statistics={botStatistics}
               onDeleteBot={handleDeleteBotClick}
               onToggleStatus={handleToggleBotStatus}
-          />
+            />
           )}
         </div>
       </div>

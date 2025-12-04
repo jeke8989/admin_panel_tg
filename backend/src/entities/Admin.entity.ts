@@ -7,6 +7,8 @@ import {
   Index,
 } from 'typeorm';
 
+export type AdminRole = 'admin' | 'user';
+
 @Entity('admins')
 export class Admin {
   @PrimaryGeneratedColumn('uuid')
@@ -18,6 +20,9 @@ export class Admin {
 
   @Column({ type: 'varchar', length: 255 })
   password: string;
+
+  @Column({ type: 'varchar', length: 20, default: 'admin' })
+  role: AdminRole;
 
   @CreateDateColumn()
   createdAt: Date;

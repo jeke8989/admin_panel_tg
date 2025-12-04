@@ -1,9 +1,12 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { api } from '../utils/api';
 
+type AdminRole = 'admin' | 'user';
+
 interface Admin {
   id: string;
   email: string;
+  role: AdminRole;
 }
 
 interface AuthContextType {

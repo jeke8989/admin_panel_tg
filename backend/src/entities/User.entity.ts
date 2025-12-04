@@ -34,6 +34,9 @@ export class User {
   @Column({ type: 'boolean', default: false, name: 'is_bot' })
   isBot: boolean;
 
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'start_param' })
+  startParam: string | null;
+
   @Column({ type: 'varchar', length: 10, nullable: true, name: 'language_code' })
   languageCode: string | null;
 

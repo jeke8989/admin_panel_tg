@@ -6,6 +6,8 @@ import { ChatsModule } from './chats/chats.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { TemplatesModule } from './templates/templates.module';
 import { TagsModule } from './tags/tags.module';
+import { WorkflowsModule } from './workflows/workflows.module';
+import { BroadcastsModule } from './broadcasts/broadcasts.module';
 
 @Module({
   imports: [
@@ -15,6 +17,8 @@ import { TagsModule } from './tags/tags.module';
     TelegramModule,
     TemplatesModule,
     TagsModule,
+    WorkflowsModule,
+    BroadcastsModule,
   ],
 })
 export class AppModule {}

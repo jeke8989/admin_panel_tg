@@ -1,12 +1,15 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Telegraf, Context } from 'telegraf';
-import { Message as TelegramMessage } from 'telegraf/typings/core/types/typegram';
+import { Message as TelegramMessage, Chat as TelegramChat } from 'telegraf/typings/core/types/typegram';
 import { Bot } from '../entities/Bot.entity';
 import { Chat, ChatType } from '../entities/Chat.entity';
 import { User } from '../entities/User.entity';
 import { Message, MessageType } from '../entities/Message.entity';
+import { MessageRead } from '../entities/MessageRead.entity';
+import { WorkflowExecutorService } from '../workflows/workflow-executor.service';
+import * as iconv from 'iconv-lite';
 
 @Injectable()
 export class TelegramService implements OnModuleInit {
@@ -22,6 +25,10 @@ export class TelegramService implements OnModuleInit {
     private userRepository: Repository<User>,
     @InjectRepository(Message)
     private messageRepository: Repository<Message>,
+    @InjectRepository(MessageRead)
+    private messageReadRepository: Repository<MessageRead>,
+    @Inject(forwardRef(() => WorkflowExecutorService))
+    private workflowExecutor: WorkflowExecutorService,
   ) {}
 
   async onModuleInit() {
@@ -52,7 +59,7 @@ export class TelegramService implements OnModuleInit {
         new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Timeout getting bot info')), 10000)
         )
-      ]) as any;
+      ]) as unknown as { username: string; first_name: string };
 
       // Сохраняем бота в БД, если его еще нет
       let bot: Bot;
@@ -79,6 +86,20 @@ export class TelegramService implements OnModuleInit {
 
       // Настраиваем обработчики
       this.setupHandlers(telegrafBot, bot.id);
+
+      // Middleware для логирования всех обновлений (для отладки)
+      telegrafBot.use(async (ctx, next) => {
+        try {
+          if (ctx.callbackQuery) {
+            this.logger.debug(`[DEBUG] Incoming callback_query: ${JSON.stringify(ctx.callbackQuery)}`);
+          } else if (ctx.message) {
+            // this.logger.debug(`[DEBUG] Incoming message: ${JSON.stringify(ctx.message)}`);
+          }
+        } catch (e) {
+          console.error('Error logging update', e);
+        }
+        await next();
+      });
 
       // Запускаем бота асинхронно
       telegrafBot.launch().then(() => {
@@ -143,6 +164,58 @@ export class TelegramService implements OnModuleInit {
     telegrafBot.on('animation', async (ctx) => {
       await this.handleAnimationMessage(ctx, botId);
     });
+
+    // Обработка callback queries
+    telegrafBot.on('callback_query', async (ctx) => {
+      this.logger.log(`[DEBUG] Callback query handler triggered for bot ${botId}`);
+      await this.handleCallbackQuery(ctx, botId);
+    });
+  }
+
+  private async handleCallbackQuery(ctx: Context, botId: string) {
+    try {
+      const callbackQuery = ctx.callbackQuery;
+      if (!callbackQuery) return;
+
+      const from = callbackQuery.from;
+      const telegramChatId = callbackQuery.message?.chat.id;
+      
+      // Get user and chat if possible (for context)
+      const user = await this.getOrCreateUser(from);
+      let chatId: string | undefined;
+      
+      if (telegramChatId) {
+        const chat = await this.getOrCreateChat(telegramChatId, botId, user.id, callbackQuery.message.chat);
+        chatId = chat.id;
+      }
+      
+      const data = 'data' in callbackQuery ? callbackQuery.data : undefined;
+      
+      this.logger.log(`Callback query received: data='${data}', chatId=${telegramChatId}, userId=${from.id}`);
+      
+      if (!data) {
+        this.logger.warn(`Callback query has no data`);
+        await ctx.answerCbQuery();
+        return;
+      }
+
+      // Execute workflow for button click (callback)
+      await this.workflowExecutor.executeWorkflow(botId, 'callback', { 
+        callbackQuery, 
+        data,
+        userId: from.id,
+        botId,
+        chatId,
+        telegramChatId,
+        user 
+      });
+
+      // Answer callback query to stop loading animation
+      await ctx.answerCbQuery();
+      
+    } catch (error) {
+      this.logger.error('Ошибка при обработке callback query:', error);
+    }
   }
 
   private async handleTextMessage(ctx: Context, botId: string) {
@@ -153,6 +226,22 @@ export class TelegramService implements OnModuleInit {
 
       // Получить или создать пользователя
       const user = await this.getOrCreateUser(from);
+
+      // Проверка на команду /start и наличие параметра (deep linking)
+      if (telegramMessage.text && telegramMessage.text.startsWith('/start ')) {
+        const parts = telegramMessage.text.split(' ');
+        if (parts.length > 1) {
+          const payload = parts[1].trim();
+          // Сохраняем start_param только если он еще не установлен
+          if (payload && !user.startParam) {
+            user.startParam = payload;
+            await this.userRepository.save(user);
+            this.logger.log(`Сохранен start_param для пользователя ${user.id}: ${payload}`);
+          } else if (payload && user.startParam) {
+            this.logger.log(`start_param уже существует для пользователя ${user.id}: ${user.startParam}. Новое значение (${payload}) игнорируется.`);
+          }
+        }
+      }
 
       // Получить или создать чат
       const chat = await this.getOrCreateChat(chatId, botId, user.id, telegramMessage.chat);
@@ -177,9 +266,30 @@ export class TelegramService implements OnModuleInit {
       });
 
       // Пометить все предыдущие сообщения от админа как прочитанные
-      await this.markMessagesAsRead(chat.id);
+      await this.markMessagesAsRead(chat.id, user.id);
 
       this.logger.log(`Получено текстовое сообщение от ${user.firstName} в чате ${chat.id}`);
+
+      // Execute Workflow
+      const isCommand = telegramMessage.text.startsWith('/');
+      if (isCommand) {
+        await this.workflowExecutor.executeWorkflow(botId, 'command', { 
+            message: telegramMessage, 
+            chatId: chat.id,
+            telegramChatId: telegramMessage.chat.id, // Added
+            botId,
+            user 
+        });
+      } else {
+        await this.workflowExecutor.executeWorkflow(botId, 'text', { 
+            message: telegramMessage, 
+            chatId: chat.id,
+            telegramChatId: telegramMessage.chat.id, // Added
+            botId,
+            user 
+        });
+      }
+
     } catch (error) {
       this.logger.error('Ошибка при обработке текстового сообщения:', error);
     }
@@ -195,8 +305,13 @@ export class TelegramService implements OnModuleInit {
 
       const file = await bot.telegram.getFile(fileId);
       if (file.file_path) {
-        const token = (bot as any).token;
-        return `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+        // Получаем token из базы данных
+        const botEntity = await this.botRepository.findOne({ where: { id: botId } });
+        if (!botEntity) {
+          this.logger.error(`Бот ${botId} не найден в базе данных`);
+          return null;
+        }
+        return `https://api.telegram.org/file/bot${botEntity.token}/${file.file_path}`;
       }
       return null;
     } catch (error) {
@@ -240,7 +355,7 @@ export class TelegramService implements OnModuleInit {
       });
 
       // Пометить все предыдущие сообщения от админа как прочитанные
-      await this.markMessagesAsRead(chat.id);
+      await this.markMessagesAsRead(chat.id, user.id);
 
       this.logger.log(`Получено фото от ${user.firstName} в чате ${chat.id}`);
     } catch (error) {
@@ -283,7 +398,7 @@ export class TelegramService implements OnModuleInit {
       });
 
       // Пометить все предыдущие сообщения от админа как прочитанные
-      await this.markMessagesAsRead(chat.id);
+      await this.markMessagesAsRead(chat.id, user.id);
 
       this.logger.log(`Получено видео от ${user.firstName} в чате ${chat.id}`);
     } catch (error) {
@@ -324,7 +439,7 @@ export class TelegramService implements OnModuleInit {
       });
 
       // Пометить все предыдущие сообщения от админа как прочитанные
-      await this.markMessagesAsRead(chat.id);
+      await this.markMessagesAsRead(chat.id, user.id);
 
       this.logger.log(`Получено голосовое сообщение от ${user.firstName} в чате ${chat.id}`);
     } catch (error) {
@@ -368,7 +483,7 @@ export class TelegramService implements OnModuleInit {
       });
 
       // Пометить все предыдущие сообщения от админа как прочитанные
-      await this.markMessagesAsRead(chat.id);
+      await this.markMessagesAsRead(chat.id, user.id);
 
       this.logger.log(`Получен документ от ${user.firstName} в чате ${chat.id}`);
     } catch (error) {
@@ -411,7 +526,7 @@ export class TelegramService implements OnModuleInit {
       });
 
       // Пометить все предыдущие сообщения от админа как прочитанные
-      await this.markMessagesAsRead(chat.id);
+      await this.markMessagesAsRead(chat.id, user.id);
 
       this.logger.log(`Получено аудио от ${user.firstName} в чате ${chat.id}`);
     } catch (error) {
@@ -458,7 +573,7 @@ export class TelegramService implements OnModuleInit {
       });
 
       // Пометить все предыдущие сообщения от админа как прочитанные
-      await this.markMessagesAsRead(chat.id);
+      await this.markMessagesAsRead(chat.id, user.id);
 
       this.logger.log(`Получен стикер от ${user.firstName} в чате ${chat.id}`);
     } catch (error) {
@@ -499,7 +614,7 @@ export class TelegramService implements OnModuleInit {
       });
 
       // Пометить все предыдущие сообщения от админа как прочитанные
-      await this.markMessagesAsRead(chat.id);
+      await this.markMessagesAsRead(chat.id, user.id);
 
       this.logger.log(`Получена видео-заметка от ${user.firstName} в чате ${chat.id}`);
     } catch (error) {
@@ -542,7 +657,7 @@ export class TelegramService implements OnModuleInit {
       });
 
       // Пометить все предыдущие сообщения от админа как прочитанные
-      await this.markMessagesAsRead(chat.id);
+      await this.markMessagesAsRead(chat.id, user.id);
 
       this.logger.log(`Получена анимация от ${user.firstName} в чате ${chat.id}`);
     } catch (error) {
@@ -550,7 +665,14 @@ export class TelegramService implements OnModuleInit {
     }
   }
 
-  private async getOrCreateUser(from: any): Promise<User> {
+  private async getOrCreateUser(from: {
+    id: number;
+    username?: string;
+    first_name?: string;
+    last_name?: string;
+    language_code?: string;
+    is_bot?: boolean;
+  }): Promise<User> {
     let user = await this.userRepository.findOne({
       where: { telegramId: from.id },
     });
@@ -575,7 +697,7 @@ export class TelegramService implements OnModuleInit {
     telegramChatId: number,
     botId: string,
     userId: string,
-    telegramChat: any,
+    telegramChat: TelegramChat,
   ): Promise<Chat> {
     let chat = await this.chatRepository.findOne({
       where: { telegramChatId, botId },
@@ -583,12 +705,13 @@ export class TelegramService implements OnModuleInit {
 
     if (!chat) {
       const chatType = this.mapChatType(telegramChat.type);
+      const chatTitle = 'title' in telegramChat ? telegramChat.title : null;
       chat = this.chatRepository.create({
         telegramChatId,
         botId,
         userId,
         chatType,
-        title: telegramChat.title || null,
+        title: chatTitle,
       });
       chat = await this.chatRepository.save(chat);
       this.logger.log(`Создан новый чат: ${chat.id} (${telegramChatId})`);
@@ -613,18 +736,117 @@ export class TelegramService implements OnModuleInit {
   }
 
   // Методы для отправки сообщений от админа
-  async sendMessage(botId: string, telegramChatId: number, text: string, replyToMessageId?: number): Promise<TelegramMessage.TextMessage> {
+  private fixHtmlEntities(text: string): string {
+    if (!text) return text;
+    
+    // 1. Unescape double-escaped entities (&amp;lt; -> &lt; -> <)
+    let fixed = text
+      .replace(/&amp;lt;/g, '<')
+      .replace(/&amp;gt;/g, '>')
+      .replace(/&amp;quot;/g, '"')
+      .replace(/&amp;amp;/g, '&');
+
+    // 2. Unescape standard entities (&lt; -> <) specifically for HTML tags
+    // We want to turn &lt;b&gt; into <b>, but keep "1 &lt; 2" as "1 &lt; 2" ideally.
+    // However, since we are trying to fix broken HTML input, we'll be aggressive with known tags.
+    
+    const tags = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'a', 'code', 'pre', 'tg-spoiler'];
+    
+    tags.forEach(tag => {
+        // Opening tags: &lt;b&gt; or &lt;a href="..."&gt;
+        const openRegex = new RegExp(`&lt;${tag}(?:\\s+[^&gt;]*)?&gt;`, 'gi');
+        fixed = fixed.replace(openRegex, (match) => {
+            return match.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+        });
+        
+        // Closing tags: &lt;/b&gt;
+        const closeRegex = new RegExp(`&lt;/${tag}&gt;`, 'gi');
+        fixed = fixed.replace(closeRegex, `<${tag}>`.replace('<', '</')); // simple replace
+        fixed = fixed.replace(new RegExp(`&lt;/${tag}&gt;`, 'gi'), `</${tag}>`);
+    });
+
+    // Also brute-force simple cases just in case regex missed
+    fixed = fixed
+      .replace(/&lt;b&gt;/g, '<b>').replace(/&lt;\/b&gt;/g, '</b>')
+      .replace(/&lt;i&gt;/g, '<i>').replace(/&lt;\/i&gt;/g, '</i>')
+      .replace(/&lt;u&gt;/g, '<u>').replace(/&lt;\/u&gt;/g, '</u>')
+      .replace(/&lt;s&gt;/g, '<s>').replace(/&lt;\/s&gt;/g, '</s>');
+
+    return fixed;
+  }
+
+  // Методы для отправки сообщений от админа
+  async sendMessage(
+    botId: string, 
+    telegramChatId: number, 
+    text: string, 
+    replyToMessageId?: number,
+    inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
+  ): Promise<TelegramMessage.TextMessage> {
     const bot = this.bots.get(botId);
     if (!bot) {
       throw new Error(`Бот с ID ${botId} не найден`);
     }
 
-    const sentMessage = await bot.telegram.sendMessage(
-      telegramChatId, 
-      text,
-      replyToMessageId ? { reply_parameters: { message_id: replyToMessageId } } : undefined
-    );
-    return sentMessage as TelegramMessage.TextMessage;
+    const options: {
+      parse_mode?: string;
+      reply_parameters?: { message_id: number };
+      reply_markup?: { inline_keyboard: Array<Array<{ text: string; callback_data?: string }>> };
+    } = {};
+    
+    // ВАЖНО: parse_mode должен быть установлен первым
+    options.parse_mode = 'HTML';
+    
+    if (replyToMessageId) {
+      options.reply_parameters = { message_id: replyToMessageId };
+    }
+    if (inlineKeyboard && inlineKeyboard.length > 0) {
+      options.reply_markup = {
+        inline_keyboard: inlineKeyboard.map(row => 
+          row.map(btn => ({
+            text: btn.text,
+            callback_data: btn.callback_data || btn.text.toLowerCase().replace(/\s+/g, '_')
+          }))
+        )
+      };
+    }
+
+    // Fix HTML entities in text if needed
+    const processedText = this.fixHtmlEntities(text);
+
+    this.logger.log(`[DEBUG] Sending message with options: ${JSON.stringify(options)}`);
+    console.log(`[DEBUG_CONSOLE] Sending message to ${telegramChatId}. Options:`, JSON.stringify(options));
+    console.log(`[DEBUG_CONSOLE] Original text:`, text.substring(0, 100));
+    console.log(`[DEBUG_CONSOLE] Processed text:`, processedText.substring(0, 100));
+    
+    try {
+      // Используем явную передачу опций
+      const sentMessage = await bot.telegram.sendMessage(
+        telegramChatId, 
+        processedText, 
+        {
+          parse_mode: 'HTML',
+          ...(replyToMessageId && { reply_parameters: { message_id: replyToMessageId } }),
+          ...(inlineKeyboard && inlineKeyboard.length > 0 && {
+            reply_markup: {
+              inline_keyboard: inlineKeyboard.map(row => 
+                row.map(btn => ({
+                  text: btn.text,
+                  callback_data: btn.callback_data || btn.text.toLowerCase().replace(/\s+/g, '_')
+                }))
+              )
+            }
+          })
+        }
+      );
+      this.logger.log(`[DEBUG] Message sent successfully with parse_mode: HTML`);
+      return sentMessage as TelegramMessage.TextMessage;
+    } catch (error) {
+      console.error('[ERROR_CONSOLE] Failed to send message:', error);
+      this.logger.error(`[ERROR] Failed to send message:`, error);
+      this.logger.error(`[ERROR] Error details:`, JSON.stringify(error, null, 2));
+      throw error;
+    }
   }
 
   async sendPhoto(
@@ -633,19 +855,76 @@ export class TelegramService implements OnModuleInit {
     photo: string,
     caption?: string,
     replyToMessageId?: number,
+    inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.PhotoMessage> {
     const bot = this.bots.get(botId);
     if (!bot) {
       throw new Error(`Бот с ID ${botId} не найден`);
     }
 
-    const options: any = { caption };
+    const sendOptions: {
+      parse_mode?: string;
+      caption?: string;
+      reply_parameters?: { message_id: number };
+      reply_markup?: { inline_keyboard: Array<Array<{ text: string; callback_data?: string }>> };
+    } = {
+      parse_mode: 'HTML'
+    };
+    
+    if (caption) {
+      sendOptions.caption = caption;
+    }
     if (replyToMessageId) {
-      options.reply_parameters = { message_id: replyToMessageId };
+      sendOptions.reply_parameters = { message_id: replyToMessageId };
+    }
+    if (inlineKeyboard && inlineKeyboard.length > 0) {
+      sendOptions.reply_markup = {
+        inline_keyboard: inlineKeyboard.map(row => 
+          row.map(btn => ({
+            text: btn.text,
+            callback_data: btn.callback_data || btn.text.toLowerCase().replace(/\s+/g, '_')
+          }))
+        )
+      };
     }
 
-    const sentMessage = await bot.telegram.sendPhoto(telegramChatId, photo, options);
-    return sentMessage as TelegramMessage.PhotoMessage;
+    this.logger.log(`[DEBUG] Sending photo with options: ${JSON.stringify(sendOptions)}`);
+    console.log(`[DEBUG_CONSOLE] Sending photo to ${telegramChatId}. Options:`, JSON.stringify(sendOptions));
+    
+    // Fix HTML entities in caption if needed
+    const processedCaption = caption ? this.fixHtmlEntities(caption) : undefined;
+    if (processedCaption) {
+        console.log(`[DEBUG_CONSOLE] Processed caption:`, processedCaption.substring(0, 100));
+    }
+
+    try {
+      const sentMessage = await bot.telegram.sendPhoto(
+        telegramChatId, 
+        photo, 
+        {
+          parse_mode: 'HTML',
+          ...(processedCaption && { caption: processedCaption }),
+          ...(replyToMessageId && { reply_parameters: { message_id: replyToMessageId } }),
+          ...(inlineKeyboard && inlineKeyboard.length > 0 && {
+            reply_markup: {
+              inline_keyboard: inlineKeyboard.map(row => 
+                row.map(btn => ({
+                  text: btn.text,
+                  callback_data: btn.callback_data || btn.text.toLowerCase().replace(/\s+/g, '_')
+                }))
+              )
+            }
+          })
+        }
+      );
+      this.logger.log(`[DEBUG] Photo sent successfully with parse_mode: HTML`);
+      return sentMessage as TelegramMessage.PhotoMessage;
+    } catch (error) {
+      console.error('[ERROR_CONSOLE] Failed to send photo:', error);
+      this.logger.error(`[ERROR] Failed to send photo:`, error);
+      this.logger.error(`[ERROR] Error details:`, JSON.stringify(error, null, 2));
+      throw error;
+    }
   }
 
   async sendVideo(
@@ -654,34 +933,86 @@ export class TelegramService implements OnModuleInit {
     video: string,
     caption?: string,
     replyToMessageId?: number,
+    inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.VideoMessage> {
     const bot = this.bots.get(botId);
     if (!bot) {
       throw new Error(`Бот с ID ${botId} не найден`);
     }
 
-    const options: any = { caption };
-    if (replyToMessageId) {
-      options.reply_parameters = { message_id: replyToMessageId };
+    this.logger.log(`[DEBUG] Sending video with parse_mode: HTML`);
+    const processedCaption = caption ? this.fixHtmlEntities(caption) : undefined;
+    this.logger.log(`[DEBUG] Caption preview: ${processedCaption ? processedCaption.substring(0, 100) : 'none'}`);
+    
+    try {
+      const sentMessage = await bot.telegram.sendVideo(
+        telegramChatId, 
+        video, 
+        {
+          parse_mode: 'HTML',
+          ...(processedCaption && { caption: processedCaption }),
+          ...(replyToMessageId && { reply_parameters: { message_id: replyToMessageId } }),
+          ...(inlineKeyboard && inlineKeyboard.length > 0 && {
+            reply_markup: {
+              inline_keyboard: inlineKeyboard.map(row => 
+                row.map(btn => ({
+                  text: btn.text,
+                  callback_data: btn.callback_data || btn.text.toLowerCase().replace(/\s+/g, '_')
+                }))
+              )
+            }
+          })
+        }
+      );
+      this.logger.log(`[DEBUG] Video sent successfully with parse_mode: HTML`);
+      return sentMessage as TelegramMessage.VideoMessage;
+    } catch (error) {
+      this.logger.error(`[ERROR] Failed to send video:`, error);
+      this.logger.error(`[ERROR] Error details:`, JSON.stringify(error, null, 2));
+      throw error;
     }
-
-    const sentMessage = await bot.telegram.sendVideo(telegramChatId, video, options);
-    return sentMessage as TelegramMessage.VideoMessage;
   }
 
-  async sendVoice(botId: string, telegramChatId: number, voice: string, replyToMessageId?: number): Promise<TelegramMessage.VoiceMessage> {
+  async sendVoice(
+    botId: string, 
+    telegramChatId: number, 
+    voice: string, 
+    replyToMessageId?: number,
+    inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
+  ): Promise<TelegramMessage.VoiceMessage> {
     const bot = this.bots.get(botId);
     if (!bot) {
       throw new Error(`Бот с ID ${botId} не найден`);
     }
 
-    const options: any = {};
-    if (replyToMessageId) {
-      options.reply_parameters = { message_id: replyToMessageId };
+    this.logger.log(`[DEBUG] Sending voice with parse_mode: HTML`);
+    
+    try {
+      const sentMessage = await bot.telegram.sendVoice(
+        telegramChatId, 
+        voice, 
+        {
+          parse_mode: 'HTML',
+          ...(replyToMessageId && { reply_parameters: { message_id: replyToMessageId } }),
+          ...(inlineKeyboard && inlineKeyboard.length > 0 && {
+            reply_markup: {
+              inline_keyboard: inlineKeyboard.map(row => 
+                row.map(btn => ({
+                  text: btn.text,
+                  callback_data: btn.callback_data || btn.text.toLowerCase().replace(/\s+/g, '_')
+                }))
+              )
+            }
+          })
+        }
+      );
+      this.logger.log(`[DEBUG] Voice sent successfully with parse_mode: HTML`);
+      return sentMessage as TelegramMessage.VoiceMessage;
+    } catch (error) {
+      this.logger.error(`[ERROR] Failed to send voice:`, error);
+      this.logger.error(`[ERROR] Error details:`, JSON.stringify(error, null, 2));
+      throw error;
     }
-
-    const sentMessage = await bot.telegram.sendVoice(telegramChatId, voice, options);
-    return sentMessage as TelegramMessage.VoiceMessage;
   }
 
   async sendDocument(
@@ -690,19 +1021,44 @@ export class TelegramService implements OnModuleInit {
     document: string,
     caption?: string,
     replyToMessageId?: number,
+    inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.DocumentMessage> {
     const bot = this.bots.get(botId);
     if (!bot) {
       throw new Error(`Бот с ID ${botId} не найден`);
     }
 
-    const options: any = { caption };
-    if (replyToMessageId) {
-      options.reply_parameters = { message_id: replyToMessageId };
+    this.logger.log(`[DEBUG] Sending document with parse_mode: HTML`);
+    const processedCaption = caption ? this.fixHtmlEntities(caption) : undefined;
+    this.logger.log(`[DEBUG] Caption preview: ${processedCaption ? processedCaption.substring(0, 100) : 'none'}`);
+    
+    try {
+      const sentMessage = await bot.telegram.sendDocument(
+        telegramChatId, 
+        document, 
+        {
+          parse_mode: 'HTML',
+          ...(processedCaption && { caption: processedCaption }),
+          ...(replyToMessageId && { reply_parameters: { message_id: replyToMessageId } }),
+          ...(inlineKeyboard && inlineKeyboard.length > 0 && {
+            reply_markup: {
+              inline_keyboard: inlineKeyboard.map(row => 
+                row.map(btn => ({
+                  text: btn.text,
+                  callback_data: btn.callback_data || btn.text.toLowerCase().replace(/\s+/g, '_')
+                }))
+              )
+            }
+          })
+        }
+      );
+      this.logger.log(`[DEBUG] Document sent successfully with parse_mode: HTML`);
+      return sentMessage as TelegramMessage.DocumentMessage;
+    } catch (error) {
+      this.logger.error(`[ERROR] Failed to send document:`, error);
+      this.logger.error(`[ERROR] Error details:`, JSON.stringify(error, null, 2));
+      throw error;
     }
-
-    const sentMessage = await bot.telegram.sendDocument(telegramChatId, document, options);
-    return sentMessage as TelegramMessage.DocumentMessage;
   }
 
   async sendAudio(
@@ -711,19 +1067,44 @@ export class TelegramService implements OnModuleInit {
     audio: string,
     caption?: string,
     replyToMessageId?: number,
+    inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.AudioMessage> {
     const bot = this.bots.get(botId);
     if (!bot) {
       throw new Error(`Бот с ID ${botId} не найден`);
     }
 
-    const options: any = { caption };
-    if (replyToMessageId) {
-      options.reply_parameters = { message_id: replyToMessageId };
+    this.logger.log(`[DEBUG] Sending audio with parse_mode: HTML`);
+    const processedCaption = caption ? this.fixHtmlEntities(caption) : undefined;
+    this.logger.log(`[DEBUG] Caption preview: ${processedCaption ? processedCaption.substring(0, 100) : 'none'}`);
+    
+    try {
+      const sentMessage = await bot.telegram.sendAudio(
+        telegramChatId, 
+        audio, 
+        {
+          parse_mode: 'HTML',
+          ...(processedCaption && { caption: processedCaption }),
+          ...(replyToMessageId && { reply_parameters: { message_id: replyToMessageId } }),
+          ...(inlineKeyboard && inlineKeyboard.length > 0 && {
+            reply_markup: {
+              inline_keyboard: inlineKeyboard.map(row => 
+                row.map(btn => ({
+                  text: btn.text,
+                  callback_data: btn.callback_data || btn.text.toLowerCase().replace(/\s+/g, '_')
+                }))
+              )
+            }
+          })
+        }
+      );
+      this.logger.log(`[DEBUG] Audio sent successfully with parse_mode: HTML`);
+      return sentMessage as TelegramMessage.AudioMessage;
+    } catch (error) {
+      this.logger.error(`[ERROR] Failed to send audio:`, error);
+      this.logger.error(`[ERROR] Error details:`, JSON.stringify(error, null, 2));
+      throw error;
     }
-
-    const sentMessage = await bot.telegram.sendAudio(telegramChatId, audio, options);
-    return sentMessage as TelegramMessage.AudioMessage;
   }
 
   async sendAnimation(
@@ -732,19 +1113,44 @@ export class TelegramService implements OnModuleInit {
     animation: string,
     caption?: string,
     replyToMessageId?: number,
+    inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.AnimationMessage> {
     const bot = this.bots.get(botId);
     if (!bot) {
       throw new Error(`Бот с ID ${botId} не найден`);
     }
 
-    const options: any = { caption };
-    if (replyToMessageId) {
-      options.reply_parameters = { message_id: replyToMessageId };
+    this.logger.log(`[DEBUG] Sending animation with parse_mode: HTML`);
+    const processedCaption = caption ? this.fixHtmlEntities(caption) : undefined;
+    this.logger.log(`[DEBUG] Caption preview: ${processedCaption ? processedCaption.substring(0, 100) : 'none'}`);
+    
+    try {
+      const sentMessage = await bot.telegram.sendAnimation(
+        telegramChatId, 
+        animation, 
+        {
+          parse_mode: 'HTML',
+          ...(processedCaption && { caption: processedCaption }),
+          ...(replyToMessageId && { reply_parameters: { message_id: replyToMessageId } }),
+          ...(inlineKeyboard && inlineKeyboard.length > 0 && {
+            reply_markup: {
+              inline_keyboard: inlineKeyboard.map(row => 
+                row.map(btn => ({
+                  text: btn.text,
+                  callback_data: btn.callback_data || btn.text.toLowerCase().replace(/\s+/g, '_')
+                }))
+              )
+            }
+          })
+        }
+      );
+      this.logger.log(`[DEBUG] Animation sent successfully with parse_mode: HTML`);
+      return sentMessage as TelegramMessage.AnimationMessage;
+    } catch (error) {
+      this.logger.error(`[ERROR] Failed to send animation:`, error);
+      this.logger.error(`[ERROR] Error details:`, JSON.stringify(error, null, 2));
+      throw error;
     }
-
-    const sentMessage = await bot.telegram.sendAnimation(telegramChatId, animation, options);
-    return sentMessage as TelegramMessage.AnimationMessage;
   }
 
   async getBotInfo(botId: string) {
@@ -775,11 +1181,271 @@ export class TelegramService implements OnModuleInit {
   }
 
   /**
+   * Загружает файл в Telegram и возвращает file_id и, при необходимости, URL файла
+   * Файл отправляется в первый доступный чат бота (или создается служебный чат)
+   */
+  async uploadFileToTelegram(
+    botId: string,
+    file: Express.Multer.File,
+  ): Promise<{ fileId: string; fileType: string; fileUrl?: string | null }> {
+    this.logger.log(`[uploadFileToTelegram] Starting upload for botId: ${botId}, fileName: ${file?.originalname}`);
+    this.logger.log(`[uploadFileToTelegram] Available bots in map: ${Array.from(this.bots.keys()).join(', ')}`);
+    
+    let bot = this.bots.get(botId);
+    if (!bot) {
+      // Попробуем переинициализировать бота
+      this.logger.warn(`[uploadFileToTelegram] Bot not found in map, trying to reinitialize: ${botId}`);
+      const botEntity = await this.botRepository.findOne({ where: { id: botId, isActive: true } });
+      if (!botEntity) {
+        this.logger.error(`[uploadFileToTelegram] Bot not found in database or inactive: ${botId}`);
+        throw new Error(`Бот с ID ${botId} не найден или неактивен. Убедитесь, что бот активен и запущен.`);
+      }
+      try {
+        await this.createBot(botEntity.token, botEntity.id);
+        bot = this.bots.get(botId);
+        if (!bot) {
+          this.logger.error(`[uploadFileToTelegram] Bot still not found after reinitialization: ${botId}`);
+          throw new Error(`Бот с ID ${botId} не найден после переинициализации.`);
+        }
+        this.logger.log(`[uploadFileToTelegram] Bot reinitialized successfully`);
+      } catch (reinitError) {
+        this.logger.error(`[uploadFileToTelegram] Failed to reinitialize bot:`, reinitError);
+        const errorMsg = reinitError instanceof Error ? reinitError.message : String(reinitError);
+        throw new Error(`Бот с ID ${botId} не найден. Ошибка переинициализации: ${errorMsg}`);
+      }
+    }
+
+    try {
+      // Находим первый доступный чат бота для загрузки файла
+      const chat = await this.chatRepository.findOne({
+        where: { botId },
+        order: { createdAt: 'ASC' },
+      });
+
+      if (!chat) {
+        this.logger.error(`[uploadFileToTelegram] No chat found for bot: ${botId}`);
+        // Получаем username из базы данных
+        const botEntity = await this.botRepository.findOne({ where: { id: botId } });
+        const botUsername = botEntity?.username || '...';
+        throw new Error(`Не найден ни один активный чат для этого бота. Чтобы загружать файлы, отправьте боту @${botUsername} любое сообщение (например, /start).`);
+      }
+      
+      this.logger.log(`[uploadFileToTelegram] Found chat: ${chat.id}, telegramChatId: ${chat.telegramChatId}`);
+
+      const chatId = chat.telegramChatId;
+
+      // Определяем тип файла и отправляем соответствующим методом
+      const mimeType = file.mimetype || '';
+      let fileId: string;
+      let messageId: number;
+
+      // Исправление кодировки имени файла
+      // Multer/Busboy в NestJS имеет известную проблему с кодировкой UTF-8 в заголовках.
+      // Он парсит их как latin1 (ISO-8859-1).
+      // Используем iconv-lite для корректной перекодировки.
+      try {
+        if (file.originalname) {
+          const originalName = file.originalname;
+          const originalBuffer = Buffer.from(originalName, 'latin1');
+          const fixedName = iconv.decode(originalBuffer, 'utf8');
+          
+          this.logger.log(`[DEBUG_UPLOAD] Encoding fix (iconv): "${originalName}" -> "${fixedName}"`);
+          file.originalname = fixedName;
+        } else {
+          file.originalname = `file_${Date.now()}`;
+        }
+      } catch (e) {
+        console.warn('Failed to fix filename encoding:', e);
+      }
+
+      if (!file.buffer || file.buffer.length === 0) {
+        throw new Error('Файл пуст или поврежден (нулевой размер буфера)');
+      }
+
+      this.logger.log(`[uploadFileToTelegram] Sending file: ${file.originalname}, size: ${file.size}, type: ${mimeType}, chatId: ${chatId} (${typeof chatId})`);
+
+      try {
+        let sentMessage: TelegramMessage | null = null;
+
+        if (mimeType.startsWith('image/')) {
+          // Для изображений используем sendPhoto
+          this.logger.log(`[uploadFileToTelegram] Sending photo to chat ${chatId}`);
+          sentMessage = await bot.telegram.sendPhoto(chatId, {
+            source: file.buffer,
+            filename: file.originalname,
+          });
+          if ('photo' in sentMessage) {
+            fileId = sentMessage.photo[sentMessage.photo.length - 1].file_id;
+          } else if ('document' in sentMessage) {
+             // Fallback если Telegram сконвертировал в документ
+             fileId = (sentMessage as TelegramMessage.DocumentMessage).document.file_id;
+          }
+          messageId = sentMessage.message_id;
+        } else if (mimeType.startsWith('video/')) {
+          // Для видео используем sendVideo
+          this.logger.log(`[uploadFileToTelegram] Sending video to chat ${chatId}`);
+          sentMessage = await bot.telegram.sendVideo(chatId, {
+            source: file.buffer,
+            filename: file.originalname,
+          });
+          if ('video' in sentMessage) {
+            fileId = sentMessage.video.file_id;
+          } else if ('document' in sentMessage) {
+            fileId = (sentMessage as TelegramMessage.DocumentMessage).document.file_id;
+          }
+          messageId = sentMessage.message_id;
+        } else if (mimeType.startsWith('audio/')) {
+          if (mimeType === 'audio/ogg' || mimeType === 'audio/mpeg') {
+            // Для голосовых сообщений
+            this.logger.log(`[uploadFileToTelegram] Sending voice to chat ${chatId}`);
+            sentMessage = await bot.telegram.sendVoice(chatId, {
+              source: file.buffer,
+              filename: file.originalname,
+            });
+            if ('voice' in sentMessage) {
+              fileId = sentMessage.voice.file_id;
+            } else if ('document' in sentMessage) {
+              fileId = (sentMessage as TelegramMessage.DocumentMessage).document.file_id;
+            } else if ('audio' in sentMessage) {
+              fileId = (sentMessage as TelegramMessage.AudioMessage).audio.file_id;
+            }
+            messageId = sentMessage.message_id;
+          } else {
+            // Для аудио файлов
+            this.logger.log(`[uploadFileToTelegram] Sending audio to chat ${chatId}`);
+            sentMessage = await bot.telegram.sendAudio(chatId, {
+              source: file.buffer,
+              filename: file.originalname,
+            });
+            if ('audio' in sentMessage) {
+              fileId = sentMessage.audio.file_id;
+            } else if ('document' in sentMessage) {
+              fileId = (sentMessage as TelegramMessage.DocumentMessage).document.file_id;
+            }
+            messageId = sentMessage.message_id;
+          }
+        } else if (mimeType === 'image/gif' || file.originalname.endsWith('.gif')) {
+          // Для GIF анимаций
+          this.logger.log(`[uploadFileToTelegram] Sending animation to chat ${chatId}`);
+          sentMessage = await bot.telegram.sendAnimation(chatId, {
+            source: file.buffer,
+            filename: file.originalname,
+          });
+          if ('animation' in sentMessage) {
+            fileId = sentMessage.animation.file_id;
+          } else if ('document' in sentMessage) {
+            fileId = (sentMessage as TelegramMessage.DocumentMessage).document.file_id;
+          }
+          messageId = sentMessage.message_id;
+        } else {
+          // Для всех остальных файлов используем sendDocument
+          this.logger.log(`[uploadFileToTelegram] Sending document to chat ${chatId}`);
+          sentMessage = await bot.telegram.sendDocument(chatId, {
+            source: file.buffer,
+            filename: file.originalname,
+          });
+          if ('document' in sentMessage) {
+            fileId = sentMessage.document.file_id;
+          }
+          messageId = sentMessage.message_id;
+        }
+
+        if (!fileId && sentMessage) {
+           // Попытка найти file_id в других полях, если специфичные не сработали
+           if ('document' in sentMessage) fileId = (sentMessage as TelegramMessage.DocumentMessage).document.file_id;
+           else if ('photo' in sentMessage) fileId = (sentMessage as TelegramMessage.PhotoMessage).photo[(sentMessage as TelegramMessage.PhotoMessage).photo.length - 1].file_id;
+           else if ('video' in sentMessage) fileId = (sentMessage as TelegramMessage.VideoMessage).video.file_id;
+           else if ('audio' in sentMessage) fileId = (sentMessage as TelegramMessage.AudioMessage).audio.file_id;
+           else if ('voice' in sentMessage) fileId = (sentMessage as TelegramMessage.VoiceMessage).voice.file_id;
+           else if ('animation' in sentMessage) fileId = (sentMessage as TelegramMessage.AnimationMessage).animation.file_id;
+           else if ('sticker' in sentMessage) fileId = (sentMessage as TelegramMessage.StickerMessage).sticker.file_id;
+        }
+
+        if (!fileId) {
+          throw new Error('Не удалось получить file_id от Telegram. Возможно, формат файла не поддерживается.');
+        }
+
+      } catch (sendError) {
+        this.logger.error(`[uploadFileToTelegram] Error sending file to Telegram:`, sendError);
+        // Fallback: пробуем отправить как документ, если ошибка была при отправке медиа
+        if (!mimeType.startsWith('application/') && !mimeType.startsWith('text/')) {
+           this.logger.log(`[uploadFileToTelegram] Retrying as document...`);
+           try {
+             const sentMessage = await bot.telegram.sendDocument(chatId, {
+                source: file.buffer,
+                filename: file.originalname,
+             });
+             if ('document' in sentMessage) {
+                fileId = sentMessage.document.file_id;
+                messageId = sentMessage.message_id;
+             } else {
+                throw new Error('Telegram не вернул document object');
+             }
+           } catch (retryError) {
+             this.logger.error(`[uploadFileToTelegram] Error sending as document:`, retryError);
+             const errorMsg = sendError instanceof Error ? sendError.message : String(sendError);
+             throw new Error(`Ошибка при отправке файла в Telegram: ${errorMsg}`);
+           }
+        } else {
+           const errorMsg = sendError instanceof Error ? sendError.message : String(sendError);
+           throw new Error(`Ошибка при отправке файла в Telegram: ${errorMsg}`);
+        }
+      }
+
+      // Определяем тип файла для использования в workflow
+      let fileType = 'document';
+      if (mimeType.startsWith('image/')) fileType = 'photo';
+      else if (mimeType.startsWith('video/')) fileType = 'video';
+      else if (mimeType.startsWith('audio/')) {
+        fileType = mimeType === 'audio/ogg' || mimeType === 'audio/mpeg' ? 'voice' : 'audio';
+      } else if (mimeType === 'image/gif' || file.originalname.endsWith('.gif')) {
+        fileType = 'animation';
+      }
+
+      // Получаем URL файла (для превью на фронтенде)
+      const fileUrl = await this.getFileUrl(botId, fileId);
+
+      // Удаляем временное сообщение после получения file_id
+      if (typeof messageId === 'number') {
+        try {
+          await bot.telegram.deleteMessage(chatId, messageId);
+        } catch (deleteError) {
+          // Игнорируем ошибку удаления - не критично
+          this.logger.warn(`Не удалось удалить временное сообщение ${messageId}:`, deleteError);
+        }
+      }
+
+      this.logger.log(`[uploadFileToTelegram] Upload successful: fileId=${fileId}, fileType=${fileType}`);
+      return { fileId, fileType, fileUrl };
+    } catch (error) {
+      this.logger.error(`[uploadFileToTelegram] Error uploading file:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const fullError = `Не удалось загрузить файл в Telegram: ${errorMessage}`;
+      this.logger.error(`[uploadFileToTelegram] Full error: ${fullError}`);
+      throw new Error(fullError);
+    }
+  }
+
+  /**
    * Помечает все непрочитанные сообщения от админа как прочитанные
    * когда пользователь отправляет новое сообщение
    */
-  private async markMessagesAsRead(chatId: string) {
+  private async markMessagesAsRead(chatId: string, userId: string) {
     try {
+      // Получаем все непрочитанные сообщения от админа в этом чате
+      const unreadMessages = await this.messageRepository.find({
+        where: {
+          chatId,
+          isFromAdmin: true,
+          isRead: false,
+        },
+      });
+
+      if (unreadMessages.length === 0) {
+        return;
+      }
+
+      // Обновляем статус прочтения
       await this.messageRepository
         .createQueryBuilder()
         .update()
@@ -788,6 +1454,44 @@ export class TelegramService implements OnModuleInit {
         .andWhere('isFromAdmin = :isFromAdmin', { isFromAdmin: true })
         .andWhere('isRead = :isRead', { isRead: false })
         .execute();
+
+      // Создаем записи MessageRead для каждого прочитанного сообщения
+      const messageReads = unreadMessages.map((message) =>
+        this.messageReadRepository.create({
+          messageId: message.id,
+          userId: userId,
+        }),
+      );
+
+      // Сохраняем записи прочтения (используем save с проверкой на дубликаты)
+      for (const messageRead of messageReads) {
+        try {
+          // Проверяем, существует ли уже запись прочтения
+          const existingRead = await this.messageReadRepository.findOne({
+            where: {
+              messageId: messageRead.messageId,
+              userId: messageRead.userId,
+            },
+          });
+
+          if (!existingRead) {
+            await this.messageReadRepository.save(messageRead);
+            this.logger.debug(`Создана запись прочтения для сообщения ${messageRead.messageId} пользователем ${userId}`);
+          } else {
+            this.logger.debug(`Запись прочтения уже существует для сообщения ${messageRead.messageId} пользователем ${userId}`);
+          }
+        } catch (error) {
+          // Игнорируем ошибки уникальности (если запись уже существует)
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          if (errorMessage.includes('duplicate') || errorMessage.includes('unique') || errorMessage.includes('23505')) {
+            this.logger.debug(`Запись прочтения уже существует для сообщения ${messageRead.messageId} пользователем ${userId}`);
+          } else {
+            this.logger.warn(`Ошибка при создании записи прочтения для сообщения ${messageRead.messageId}:`, error);
+          }
+        }
+      }
+
+      this.logger.log(`Помечено ${unreadMessages.length} сообщений как прочитанные для пользователя ${userId}`);
     } catch (error) {
       this.logger.error('Ошибка при отметке сообщений как прочитанных:', error);
     }
@@ -861,6 +1565,10 @@ export class TelegramService implements OnModuleInit {
     try {
       // Telegram API требует пустой массив для удаления реакций
       // или массив с одной реакцией для установки
+      // Преобразуем реакции в формат, ожидаемый Telegram API
+      // Используем type assertion, так как тип ReactionType требует более строгую типизацию
+      // Используем двойное приведение типов для совместимости с Telegram API
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await bot.telegram.setMessageReaction(telegramChatId, messageId, reactions as any);
       this.logger.log(
         `Реакция установлена для сообщения ${messageId} в чате ${telegramChatId}: ${reactions.map(r => r.emoji).join(', ')}`

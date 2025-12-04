@@ -213,6 +213,11 @@ export const ChatWindow = ({
                     ))}
                   </div>
                 )}
+                {chat.user?.startParam && (
+                  <span className="px-2 py-0.5 text-[10px] font-bold bg-purple-600 text-white rounded-full flex-shrink-0 shadow-sm">
+                    {chat.user.startParam}
+                  </span>
+                )}
               </div>
             </div>
           </div>

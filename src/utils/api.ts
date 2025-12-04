@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Bot, Message, MessageType, BotStatistics, Template, Tag, Chat } from '../types';
+import type { Bot, Message, MessageType, BotStatistics, Template, Tag, Chat, BotWorkflow, Broadcast, BroadcastStatistics } from '../types';
 
 const MODE = import.meta.env.VITE_APP_MODE || 'dev';
 const API_BASE_URL = MODE === 'live' 
@@ -224,3 +224,102 @@ export const removeTagFromChat = async (chatId: string, tagId: string): Promise<
   return response.data;
 };
 
+// Workflows API
+export const getBotWorkflows = async (botId: string): Promise<BotWorkflow[]> => {
+  const response = await api.get(`/bots/${botId}/workflows`);
+  return response.data;
+};
+
+export const createWorkflow = async (botId: string, workflow: Partial<BotWorkflow>): Promise<BotWorkflow> => {
+  const response = await api.post(`/bots/${botId}/workflows`, workflow);
+  return response.data;
+};
+
+export const updateWorkflow = async (botId: string, workflowId: string, workflow: Partial<BotWorkflow>): Promise<BotWorkflow> => {
+  const response = await api.put(`/bots/${botId}/workflows/${workflowId}`, workflow);
+  return response.data;
+};
+
+export const deleteWorkflow = async (botId: string, workflowId: string): Promise<void> => {
+  await api.delete(`/bots/${botId}/workflows/${workflowId}`);
+};
+
+export const activateWorkflow = async (botId: string, workflowId: string): Promise<BotWorkflow> => {
+  const response = await api.post(`/bots/${botId}/workflows/${workflowId}/activate`);
+  return response.data;
+};
+
+export const deactivateWorkflow = async (botId: string, workflowId: string): Promise<BotWorkflow> => {
+  const response = await api.post(`/bots/${botId}/workflows/${workflowId}/deactivate`);
+  return response.data;
+};
+
+export const uploadWorkflowFile = async (
+  botId: string,
+  file: File,
+): Promise<{ fileId: string; fileType: string; fileUrl?: string | null }> => {
+  console.log('[API] uploadWorkflowFile called:', { botId, fileName: file.name, fileSize: file.size });
+  
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  try {
+    const response = await api.post(`/bots/${botId}/workflows/files/upload`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    console.log('[API] uploadWorkflowFile success:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('[API] uploadWorkflowFile error:', error);
+    throw error;
+  }
+};
+
+export const getWorkflowFileUrl = async (
+  botId: string,
+  fileId: string,
+): Promise<string | null> => {
+  const response = await api.get(`/bots/${botId}/workflows/files/${fileId}/url`);
+  return response.data.fileUrl ?? null;
+};
+
+// Broadcasts API
+export const createBroadcast = async (
+  formData: FormData,
+): Promise<Broadcast> => {
+  // Axios автоматически установит правильный Content-Type для FormData
+  const response = await api.post('/broadcasts', formData);
+  return response.data;
+};
+
+export const getBroadcasts = async (): Promise<Broadcast[]> => {
+  const response = await api.get('/broadcasts');
+  return response.data;
+};
+
+export const getBroadcastById = async (id: string): Promise<Broadcast> => {
+  const response = await api.get(`/broadcasts/${id}`);
+  return response.data;
+};
+
+export const getBroadcastStatistics = async (
+  id: string,
+): Promise<BroadcastStatistics> => {
+  const response = await api.get(`/broadcasts/${id}/statistics`);
+  return response.data;
+};
+
+export const sendBroadcast = async (id: string): Promise<void> => {
+  await api.post(`/broadcasts/${id}/send`);
+};
+
+export const copyBroadcast = async (id: string): Promise<Broadcast> => {
+  const response = await api.post(`/broadcasts/${id}/copy`);
+  return response.data;
+};
+
+export const deleteBroadcast = async (id: string): Promise<void> => {
+  await api.delete(`/broadcasts/${id}`);
+};

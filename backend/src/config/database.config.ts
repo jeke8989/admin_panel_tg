@@ -11,6 +11,11 @@ import { Bot } from '../entities/Bot.entity';
 import { Template } from '../entities/Template.entity';
 import { TemplateFile } from '../entities/TemplateFile.entity';
 import { Tag } from '../entities/Tag.entity';
+import { BotWorkflow } from '../entities/BotWorkflow.entity';
+import { WorkflowNode } from '../entities/WorkflowNode.entity';
+import { WorkflowConnection } from '../entities/WorkflowConnection.entity';
+import { Broadcast } from '../entities/Broadcast.entity';
+import { BroadcastRecipient } from '../entities/BroadcastRecipient.entity';
 
 config();
 
@@ -21,7 +26,12 @@ export const databaseConfig: TypeOrmModuleOptions = {
   username: process.env.DB_USERNAME || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
   database: process.env.DB_NAME || 'admin_telegram',
-  entities: [User, Chat, Message, MessageRead, MessageReaction, ChatUnreadCount, Admin, Bot, Template, TemplateFile, Tag],
+  entities: [
+    User, Chat, Message, MessageRead, MessageReaction, ChatUnreadCount, 
+    Admin, Bot, Template, TemplateFile, Tag,
+    BotWorkflow, WorkflowNode, WorkflowConnection,
+    Broadcast, BroadcastRecipient
+  ],
   synchronize: process.env.NODE_ENV === 'development', // В продакшене должно быть false
   logging: process.env.NODE_ENV === 'development',
   migrations: ['dist/migrations/*.js'],

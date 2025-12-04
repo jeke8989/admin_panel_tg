@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, forwardRef, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, forwardRef, Inject, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Chat } from '../entities/Chat.entity';
@@ -15,6 +15,8 @@ import { TelegramService } from '../telegram/telegram.service';
 
 @Injectable()
 export class ChatsService {
+  private readonly logger = new Logger(ChatsService.name);
+
   constructor(
     @InjectRepository(Chat)
     private chatRepository: Repository<Chat>,
@@ -33,9 +35,11 @@ export class ChatsService {
   ) {}
 
   async findAll(tagId?: string) {
+    this.logger.log(`[DEBUG_CHATS] findAll called with tagId: ${tagId}`);
     const queryBuilder = this.chatRepository
       .createQueryBuilder('chat')
       .leftJoinAndSelect('chat.user', 'user')
+      .addSelect('user.startParam')
       .leftJoinAndSelect('chat.bot', 'bot')
       .leftJoinAndSelect('chat.lastMessage', 'lastMessage')
       .leftJoinAndSelect('lastMessage.sender', 'sender')
@@ -48,6 +52,18 @@ export class ChatsService {
     const chats = await queryBuilder
       .orderBy('chat.lastMessageAt', 'DESC')
       .getMany();
+
+    if (chats.length > 0) {
+      this.logger.log(`[DEBUG_CHATS] Found ${chats.length} chats.`);
+      const chatWithUser = chats.find(c => c.user);
+      if (chatWithUser) {
+         this.logger.log(`[DEBUG_CHATS] First user: ${JSON.stringify(chatWithUser.user)}`);
+      } else {
+         this.logger.log('[DEBUG_CHATS] No chats with user relation found.');
+      }
+    } else {
+       this.logger.log('[DEBUG_CHATS] No chats found.');
+    }
 
     // Добавляем количество непрочитанных сообщений для каждого чата
     // Считаем только сообщения от пользователей (не от админов)
@@ -136,6 +152,8 @@ export class ChatsService {
     dto: CreateMessageDto,
     file?: Express.Multer.File,
   ) {
+    console.log(`[ChatsService] createMessage called. Text: "${dto.text}", MessageType: "${dto.messageType}", File: ${!!file}`);
+    
     const chat = await this.chatRepository.findOne({
       where: { id: chatId },
       relations: ['bot', 'user'],
@@ -143,6 +161,38 @@ export class ChatsService {
 
     if (!chat) {
       throw new NotFoundException('Чат не найден');
+    }
+
+    // Добавляем префикс "Оператор Legal NDS" к сообщениям от админа
+    const operatorPrefix = '<b>Оператор Legal NDS</b>\n\n';
+
+    // Сохраняем оригинальный текст для логирования
+    const originalText = dto.text;
+    const originalCaption = dto.caption;
+
+    // ВСЕГДА применяем префикс к тексту сообщения перед отправкой
+    // Функция для добавления префикса, если его еще нет
+    const ensurePrefix = (text: string | null | undefined): string => {
+      if (!text || !text.trim()) {
+        return operatorPrefix.trim();
+      }
+      const trimmed = text.trim();
+      if (trimmed.includes('Оператор Legal NDS')) {
+        return trimmed; // Префикс уже есть
+      }
+      return operatorPrefix + trimmed;
+    };
+
+    // Применяем префикс к тексту сообщения
+    if (dto.text) {
+      dto.text = ensurePrefix(dto.text);
+      console.log(`[OPERATOR_PREFIX] Text after prefix: "${dto.text.substring(0, 100)}..."`);
+    }
+
+    // Применяем префикс к подписи медиа
+    if (dto.caption) {
+      dto.caption = ensurePrefix(dto.caption);
+      console.log(`[OPERATOR_PREFIX] Caption after prefix: "${dto.caption.substring(0, 100)}..."`);
     }
 
     // Если это ответ на сообщение, получаем telegramMessageId оригинального сообщения
@@ -184,18 +234,34 @@ export class ChatsService {
       }
     }
 
+    // Используем dto.caption (который уже содержит префикс)
     if (dto.caption) {
       caption = dto.caption;
     }
+
+    // Функция для гарантированного добавления префикса перед отправкой
+    const ensurePrefixBeforeSend = (text: string | null | undefined): string => {
+      if (!text || !text.trim()) {
+        return operatorPrefix.trim();
+      }
+      const trimmed = text.trim();
+      if (trimmed.includes('Оператор Legal NDS')) {
+        return trimmed;
+      }
+      return operatorPrefix + trimmed;
+    };
 
     // Отправляем сообщение через Telegram бота
     let sentMessage: any;
     try {
       if (messageType === MessageType.TEXT && dto.text) {
+        // Гарантируем наличие префикса перед отправкой
+        const finalText = ensurePrefixBeforeSend(dto.text);
+        console.log(`[OPERATOR_PREFIX] Sending text message to Telegram: "${finalText.substring(0, 150)}..."`);
         sentMessage = await this.telegramService.sendMessage(
           chat.botId,
           chat.telegramChatId,
-          dto.text,
+          finalText,
           replyToTelegramMessageId,
         );
       } else if (file) {
@@ -204,26 +270,32 @@ export class ChatsService {
         
         switch (messageType) {
           case MessageType.PHOTO:
+            // Гарантируем наличие префикса в подписи перед отправкой
+            const photoCaption = ensurePrefixBeforeSend(caption);
+            console.log(`[OPERATOR_PREFIX] Sending photo with caption: "${photoCaption.substring(0, 150)}..."`);
             sentMessage = await this.telegramService.sendPhoto(
               chat.botId,
               chat.telegramChatId,
               inputFile as any,
-              caption,
+              photoCaption,
               replyToTelegramMessageId,
             );
             fileId = sentMessage.photo[sentMessage.photo.length - 1].file_id;
             break;
           case MessageType.VIDEO:
+            const videoCaption = ensurePrefixBeforeSend(caption);
+            console.log(`[OPERATOR_PREFIX] Sending video with caption: "${videoCaption.substring(0, 150)}..."`);
             sentMessage = await this.telegramService.sendVideo(
               chat.botId,
               chat.telegramChatId,
               inputFile as any,
-              caption,
+              videoCaption,
               replyToTelegramMessageId,
             );
             fileId = sentMessage.video.file_id;
             break;
           case MessageType.VOICE:
+            // Voice не поддерживает caption, но можем добавить префикс как текст после отправки
             sentMessage = await this.telegramService.sendVoice(
               chat.botId,
               chat.telegramChatId,
@@ -233,31 +305,37 @@ export class ChatsService {
             fileId = sentMessage.voice.file_id;
             break;
           case MessageType.AUDIO:
+            const audioCaption = ensurePrefixBeforeSend(caption);
+            console.log(`[OPERATOR_PREFIX] Sending audio with caption: "${audioCaption.substring(0, 150)}..."`);
             sentMessage = await this.telegramService.sendAudio(
               chat.botId,
               chat.telegramChatId,
               inputFile as any,
-              caption,
+              audioCaption,
               replyToTelegramMessageId,
             );
             fileId = sentMessage.audio.file_id;
             break;
           case MessageType.DOCUMENT:
+            const documentCaption = ensurePrefixBeforeSend(caption);
+            console.log(`[OPERATOR_PREFIX] Sending document with caption: "${documentCaption.substring(0, 150)}..."`);
             sentMessage = await this.telegramService.sendDocument(
               chat.botId,
               chat.telegramChatId,
               inputFile as any,
-              caption,
+              documentCaption,
               replyToTelegramMessageId,
             );
             fileId = sentMessage.document.file_id;
             break;
           case MessageType.ANIMATION:
+            const animationCaption = ensurePrefixBeforeSend(caption);
+            console.log(`[OPERATOR_PREFIX] Sending animation with caption: "${animationCaption.substring(0, 150)}..."`);
             sentMessage = await this.telegramService.sendAnimation(
               chat.botId,
               chat.telegramChatId,
               inputFile as any,
-              caption,
+              animationCaption,
               replyToTelegramMessageId,
             );
             fileId = sentMessage.animation.file_id;
@@ -268,20 +346,24 @@ export class ChatsService {
         fileId = dto.fileId;
         switch (messageType) {
           case MessageType.PHOTO:
+            const photoCaptionFileId = ensurePrefixBeforeSend(caption);
+            console.log(`[OPERATOR_PREFIX] Sending photo (fileId) with caption: "${photoCaptionFileId.substring(0, 150)}..."`);
             sentMessage = await this.telegramService.sendPhoto(
               chat.botId,
               chat.telegramChatId,
               dto.fileId,
-              caption,
+              photoCaptionFileId,
               replyToTelegramMessageId,
             );
             break;
           case MessageType.VIDEO:
+            const videoCaptionFileId = ensurePrefixBeforeSend(caption);
+            console.log(`[OPERATOR_PREFIX] Sending video (fileId) with caption: "${videoCaptionFileId.substring(0, 150)}..."`);
             sentMessage = await this.telegramService.sendVideo(
               chat.botId,
               chat.telegramChatId,
               dto.fileId,
-              caption,
+              videoCaptionFileId,
               replyToTelegramMessageId,
             );
             break;
@@ -294,29 +376,35 @@ export class ChatsService {
             );
             break;
           case MessageType.AUDIO:
+            const audioCaptionFileId = ensurePrefixBeforeSend(caption);
+            console.log(`[OPERATOR_PREFIX] Sending audio (fileId) with caption: "${audioCaptionFileId.substring(0, 150)}..."`);
             sentMessage = await this.telegramService.sendAudio(
               chat.botId,
               chat.telegramChatId,
               dto.fileId,
-              caption,
+              audioCaptionFileId,
               replyToTelegramMessageId,
             );
             break;
           case MessageType.DOCUMENT:
+            const documentCaptionFileId = ensurePrefixBeforeSend(caption);
+            console.log(`[OPERATOR_PREFIX] Sending document (fileId) with caption: "${documentCaptionFileId.substring(0, 150)}..."`);
             sentMessage = await this.telegramService.sendDocument(
               chat.botId,
               chat.telegramChatId,
               dto.fileId,
-              caption,
+              documentCaptionFileId,
               replyToTelegramMessageId,
             );
             break;
           case MessageType.ANIMATION:
+            const animationCaptionFileId = ensurePrefixBeforeSend(caption);
+            console.log(`[OPERATOR_PREFIX] Sending animation (fileId) with caption: "${animationCaptionFileId.substring(0, 150)}..."`);
             sentMessage = await this.telegramService.sendAnimation(
               chat.botId,
               chat.telegramChatId,
               dto.fileId,
-              caption,
+              animationCaptionFileId,
               replyToTelegramMessageId,
             );
             break;
@@ -351,12 +439,16 @@ export class ChatsService {
     }
 
     // Сохраняем сообщение в БД
+    // Используем текст/подпись с префиксом для сохранения
+    const textForDb = messageType === MessageType.TEXT ? (dto.text || '') : null;
+    const captionForDb = messageType !== MessageType.TEXT ? (caption || null) : null;
+    
     const message = this.messageRepository.create({
       chatId,
       botId: chat.botId,
       senderId: chat.userId, // Админ пишет от имени бота
-      text: dto.text || caption,
-      caption,
+      text: textForDb,
+      caption: captionForDb,
       messageType,
       fileId,
       fileUrl,

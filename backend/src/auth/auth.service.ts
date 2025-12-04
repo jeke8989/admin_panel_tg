@@ -38,7 +38,7 @@ export class AuthService {
 
       const savedAdmin = await this.adminRepository.save(admin);
 
-      const payload = { email: savedAdmin.email, sub: savedAdmin.id };
+      const payload = { email: savedAdmin.email, sub: savedAdmin.id, role: savedAdmin.role };
       const accessToken = this.jwtService.sign(payload);
 
       return {
@@ -46,6 +46,7 @@ export class AuthService {
         admin: {
           id: savedAdmin.id,
           email: savedAdmin.email,
+          role: savedAdmin.role,
         },
       };
     } catch (error) {
@@ -77,7 +78,7 @@ export class AuthService {
       throw new UnauthorizedException('Неверный email или пароль');
     }
 
-    const payload = { email: admin.email, sub: admin.id };
+    const payload = { email: admin.email, sub: admin.id, role: admin.role };
     const accessToken = this.jwtService.sign(payload);
 
     return {
@@ -85,6 +86,7 @@ export class AuthService {
       admin: {
         id: admin.id,
         email: admin.email,
+        role: admin.role,
       },
     };
   }
