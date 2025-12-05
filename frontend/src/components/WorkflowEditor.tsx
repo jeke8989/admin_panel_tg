@@ -10,7 +10,7 @@ import ReactFlow, {
 } from 'reactflow';
 import type { Connection, Edge, Node } from 'reactflow';
 import 'reactflow/dist/style.css';
-import type { BotWorkflow, WorkflowNode, WorkflowConnection, Bot } from '../types';
+import type { BotWorkflow, Bot } from '../types';
 import { updateWorkflow, getBots, activateWorkflow, deactivateWorkflow } from '../utils/api';
 import { useToast } from './ToastProvider';
 
@@ -47,7 +47,6 @@ export const WorkflowEditor = ({ workflow, onClose }: WorkflowEditorProps) => {
   const [bots, setBots] = useState<Bot[]>([]);
   const [selectedBotIds, setSelectedBotIds] = useState<string[]>((workflow as any).botIds || [workflow.botId].filter(Boolean));
   const [workflowName, setWorkflowName] = useState(workflow.name || 'Новый сценарий');
-  const [workflowDescription, setWorkflowDescription] = useState(workflow.description || '');
   const [isActive, setIsActive] = useState(workflow.isActive || false);
   const [isToggling, setIsToggling] = useState(false);
   
@@ -108,7 +107,7 @@ export const WorkflowEditor = ({ workflow, onClose }: WorkflowEditorProps) => {
     [setEdges],
   );
 
-  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+  const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
   }, []);
 
@@ -173,7 +172,7 @@ export const WorkflowEditor = ({ workflow, onClose }: WorkflowEditorProps) => {
 
       await updateWorkflow(workflow.id, {
         name: workflowName,
-        description: workflowDescription,
+        description: workflow.description || '',
         botIds: selectedBotIds,
         nodes: workflowNodes as any,
         connections: workflowConnections as any,

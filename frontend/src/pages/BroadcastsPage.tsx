@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import type { Broadcast, BroadcastStatistics } from '../types';
-import { getBroadcasts, getBroadcastById, getBroadcastStatistics, sendBroadcast, deleteBroadcast, copyBroadcast } from '../utils/api';
+import { getBroadcasts, getBroadcastById, getBroadcastStatistics, deleteBroadcast } from '../utils/api';
 import { CreateBroadcastModal } from '../components/CreateBroadcastModal';
 import { BroadcastList } from '../components/BroadcastList';
 import { useToast } from '../components/ToastProvider';
@@ -10,14 +10,14 @@ interface BroadcastsPageProps {
   activeBroadcastId?: string | null;
   onBroadcastSelect?: (id: string) => void;
   onBroadcastDeleted?: (id: string) => void;
-  onBroadcastCopied?: (id: string) => void;
+  onBroadcastCopied?: (id: string) => void; // eslint-disable-line @typescript-eslint/no-unused-vars
 }
 
 export const BroadcastsPage = ({ 
   activeBroadcastId, 
   onBroadcastSelect,
   onBroadcastDeleted,
-  onBroadcastCopied,
+  onBroadcastCopied: _onBroadcastCopied,
 }: BroadcastsPageProps = {}) => {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -25,8 +25,8 @@ export const BroadcastsPage = ({
   const [selectedBroadcastId, setSelectedBroadcastId] = useState<string | null>(
     activeBroadcastId && activeBroadcastId !== null ? activeBroadcastId : null
   );
-  const [selectedBroadcast, setSelectedBroadcast] = useState<Broadcast | null>(null);
-  const [broadcastStatistics, setBroadcastStatistics] = useState<BroadcastStatistics | null>(null);
+  const [, setSelectedBroadcast] = useState<Broadcast | null>(null);
+  const [, setBroadcastStatistics] = useState<BroadcastStatistics | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [broadcastToDelete, setBroadcastToDelete] = useState<Broadcast | null>(null);
@@ -82,24 +82,6 @@ export const BroadcastsPage = ({
     onBroadcastSelect?.(id);
   };
 
-  const handleSendBroadcast = async (id: string) => {
-    try {
-      await sendBroadcast(id);
-      await loadBroadcasts();
-      if (selectedBroadcastId === id) {
-        await loadBroadcastDetails(id);
-      }
-    } catch (error) {
-      console.error('Error sending broadcast:', error);
-      showToast('Ошибка при отправке рассылки', 'error');
-    }
-  };
-
-  const handleDeleteBroadcast = async (id: string) => {
-    const target = broadcasts.find((b) => b.id === id);
-    if (!target) return;
-    setBroadcastToDelete(target);
-  };
 
   const confirmDeleteBroadcast = async () => {
     if (!broadcastToDelete) return;
@@ -126,23 +108,6 @@ export const BroadcastsPage = ({
     }
   };
 
-  const handleCopyBroadcast = async (id: string) => {
-    try {
-      const copiedBroadcast = await copyBroadcast(id);
-      await loadBroadcasts();
-      showToast('Рассылка успешно скопирована!', 'success');
-      // Выбираем скопированную рассылку
-      await handleBroadcastSelect(copiedBroadcast.id);
-      await loadBroadcastDetails(copiedBroadcast.id);
-      onBroadcastCopied?.(copiedBroadcast.id);
-    } catch (error) {
-      console.error('Error copying broadcast:', error);
-      const errorMessage = error && typeof error === 'object' && 'response' in error
-        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
-        : 'Ошибка при копировании рассылки';
-      showToast(errorMessage || 'Ошибка при копировании рассылки', 'error');
-    }
-  };
 
   const handleCreateBroadcast = async () => {
     await loadBroadcasts();

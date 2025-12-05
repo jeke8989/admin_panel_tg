@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import type { BotWorkflow } from '../types';
-import { getWorkflows, createWorkflow, getWorkflowById, deleteWorkflow } from '../utils/api';
+import { getWorkflows, createWorkflow, deleteWorkflow } from '../utils/api';
 import { WorkflowList } from '../components/WorkflowList';
 import { DeleteWorkflowModal } from '../components/DeleteWorkflowModal';
 import { useToast } from '../components/ToastProvider';
@@ -21,8 +21,8 @@ export const WorkflowsPage = ({
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
     activeWorkflowId && activeWorkflowId !== null ? activeWorkflowId : null
   );
-  const [isCreating, setIsCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [, setIsCreating] = useState(false);
+  const [, setError] = useState<string | null>(null);
   const [workflowToDelete, setWorkflowToDelete] = useState<BotWorkflow | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const { showToast } = useToast();

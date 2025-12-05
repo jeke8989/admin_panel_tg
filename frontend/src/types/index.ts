@@ -167,21 +167,25 @@ export type NodeType =
   | 'condition-if';
 
 // Broadcast Types
-export enum BroadcastStatus {
-  DRAFT = 'draft',
-  SCHEDULED = 'scheduled',
-  SENDING = 'sending',
-  COMPLETED = 'completed',
-  FAILED = 'failed',
-}
+export const BroadcastStatus = {
+  DRAFT: 'draft',
+  SCHEDULED: 'scheduled',
+  SENDING: 'sending',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+} as const;
 
-export enum BroadcastRecipientStatus {
-  PENDING = 'pending',
-  SENT = 'sent',
-  DELIVERED = 'delivered',
-  READ = 'read',
-  FAILED = 'failed',
-}
+export type BroadcastStatus = typeof BroadcastStatus[keyof typeof BroadcastStatus];
+
+export const BroadcastRecipientStatus = {
+  PENDING: 'pending',
+  SENT: 'sent',
+  DELIVERED: 'delivered',
+  READ: 'read',
+  FAILED: 'failed',
+} as const;
+
+export type BroadcastRecipientStatus = typeof BroadcastRecipientStatus[keyof typeof BroadcastRecipientStatus];
 
 export interface BroadcastSegments {
   startParams?: string[];

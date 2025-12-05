@@ -178,7 +178,7 @@ export const NodeSettingsPanel = ({ node, botIds, onChange, onClose, onDelete }:
                 <label className="block text-gray-400 text-xs uppercase font-bold mb-2">Callback Data</label>
                 <input 
                     type="text" 
-                    value={config.callbackData || config.data || ''} 
+                    value={(config.callbackData || config.data || '') as string} 
                     onChange={e => handleChange('callbackData', e.target.value)}
                     className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
                     placeholder="Оставьте пустым для любого callback"

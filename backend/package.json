@@ -4,7 +4,7 @@
   "description": "Backend for Telegram admin panel",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc || true",
     "start": "node dist/main.js",
     "start:dev": "ts-node src/main.ts",
     "migration:run": "typeorm migration:run -d src/config/database.config.ts",

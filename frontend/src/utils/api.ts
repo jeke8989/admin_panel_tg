@@ -3,7 +3,7 @@ import type { Bot, Message, MessageType, BotStatistics, Template, Tag, Chat, Bot
 
 const MODE = import.meta.env.VITE_APP_MODE || 'dev';
 const API_BASE_URL = MODE === 'live' 
-  ? (import.meta.env.VITE_API_URL_LIVE || 'http://144.124.249.43:8081/api') 
+  ? (import.meta.env.VITE_API_URL_LIVE || 'http://144.124.249.43:4000/api') 
   : '/api';
 
 export const api = axios.create({

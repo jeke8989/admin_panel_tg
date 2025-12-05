@@ -11,7 +11,6 @@ export const BotSettingsTab = ({ bot }: BotSettingsTabProps) => {
   const [workflows, setWorkflows] = useState<BotWorkflow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editingWorkflow, setEditingWorkflow] = useState<BotWorkflow | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
     loadWorkflows();
@@ -31,7 +30,8 @@ export const BotSettingsTab = ({ bot }: BotSettingsTabProps) => {
 
   const handleCreateWorkflow = async () => {
     try {
-      const newWorkflow = await createWorkflow(bot.id, {
+      const newWorkflow = await createWorkflow({
+        botId: bot.id,
         name: 'Новый сценарий',
         description: '',
         isActive: false,
@@ -51,7 +51,7 @@ export const BotSettingsTab = ({ bot }: BotSettingsTabProps) => {
     if (!confirm('Вы уверены, что хотите удалить этот сценарий?')) return;
     
     try {
-      await deleteWorkflow(bot.id, id);
+      await deleteWorkflow(id);
       setWorkflows(workflows.filter(w => w.id !== id));
       if (editingWorkflow?.id === id) {
         setEditingWorkflow(null);
@@ -66,8 +66,8 @@ export const BotSettingsTab = ({ bot }: BotSettingsTabProps) => {
     e.stopPropagation();
     try {
       const updated = workflow.isActive 
-        ? await deactivateWorkflow(bot.id, workflow.id)
-        : await activateWorkflow(bot.id, workflow.id);
+        ? await deactivateWorkflow(workflow.id)
+        : await activateWorkflow(workflow.id);
       
       setWorkflows(workflows.map(w => w.id === workflow.id ? updated : w));
     } catch (error) {
@@ -79,7 +79,6 @@ export const BotSettingsTab = ({ bot }: BotSettingsTabProps) => {
   if (editingWorkflow) {
     return (
       <WorkflowEditor 
-        botId={bot.id} 
         workflow={editingWorkflow} 
         onClose={() => {
           setEditingWorkflow(null);
