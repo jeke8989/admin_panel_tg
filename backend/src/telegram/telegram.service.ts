@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository, DataSource } from 'typeorm';
 import { Telegraf, Context } from 'telegraf';
 import { Message as TelegramMessage, Chat as TelegramChat } from 'telegraf/typings/core/types/typegram';
 import { Bot } from '../entities/Bot.entity';
@@ -8,6 +8,8 @@ import { Chat, ChatType } from '../entities/Chat.entity';
 import { User } from '../entities/User.entity';
 import { Message, MessageType } from '../entities/Message.entity';
 import { MessageRead } from '../entities/MessageRead.entity';
+import { BroadcastRecipient } from '../entities/BroadcastRecipient.entity';
+import { BotWorkflow } from '../entities/BotWorkflow.entity';
 import { WorkflowExecutorService } from '../workflows/workflow-executor.service';
 import * as iconv from 'iconv-lite';
 
@@ -27,8 +29,13 @@ export class TelegramService implements OnModuleInit {
     private messageRepository: Repository<Message>,
     @InjectRepository(MessageRead)
     private messageReadRepository: Repository<MessageRead>,
+    @InjectRepository(BroadcastRecipient)
+    private broadcastRecipientRepository: Repository<BroadcastRecipient>,
+    @InjectRepository(BotWorkflow)
+    private workflowsRepository: Repository<BotWorkflow>,
     @Inject(forwardRef(() => WorkflowExecutorService))
     private workflowExecutor: WorkflowExecutorService,
+    private dataSource: DataSource,
   ) {}
 
   async onModuleInit() {
@@ -852,7 +859,7 @@ export class TelegramService implements OnModuleInit {
   async sendPhoto(
     botId: string,
     telegramChatId: number,
-    photo: string,
+    photo: string | { source: any; filename?: string },
     caption?: string,
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
@@ -930,7 +937,7 @@ export class TelegramService implements OnModuleInit {
   async sendVideo(
     botId: string,
     telegramChatId: number,
-    video: string,
+    video: string | { source: any; filename?: string },
     caption?: string,
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
@@ -976,7 +983,7 @@ export class TelegramService implements OnModuleInit {
   async sendVoice(
     botId: string, 
     telegramChatId: number, 
-    voice: string, 
+    voice: string | { source: any; filename?: string }, 
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.VoiceMessage> {
@@ -1018,7 +1025,7 @@ export class TelegramService implements OnModuleInit {
   async sendDocument(
     botId: string,
     telegramChatId: number,
-    document: string,
+    document: string | { source: any; filename?: string },
     caption?: string,
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
@@ -1064,7 +1071,7 @@ export class TelegramService implements OnModuleInit {
   async sendAudio(
     botId: string,
     telegramChatId: number,
-    audio: string,
+    audio: string | { source: any; filename?: string },
     caption?: string,
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
@@ -1110,7 +1117,7 @@ export class TelegramService implements OnModuleInit {
   async sendAnimation(
     botId: string,
     telegramChatId: number,
-    animation: string,
+    animation: string | { source: any; filename?: string },
     caption?: string,
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
@@ -1541,14 +1548,83 @@ export class TelegramService implements OnModuleInit {
   }
 
   async deleteBot(botId: string) {
-    const bot = this.bots.get(botId);
-    if (bot) {
-      await bot.stop();
-      this.bots.delete(botId);
+    this.logger.log(`Начинаем удаление бота ${botId}`);
+    
+    // Останавливаем бота если он запущен
+    const botInstance = this.bots.get(botId);
+    if (botInstance) {
+      try {
+        await botInstance.stop();
+        this.bots.delete(botId);
+        this.logger.log(`Бот ${botId} остановлен`);
+      } catch (e) {
+        this.logger.warn(`Ошибка при остановке бота ${botId}: ${e}`);
+      }
     }
 
-    await this.botRepository.delete(botId);
-    this.logger.log(`Бот ${botId} удален`);
+    try {
+      // Выполняем все удаления через один RAW SQL запрос в правильном порядке
+      this.logger.log(`Выполняем удаление всех связанных данных для бота ${botId}`);
+      
+      await this.dataSource.query(`
+        -- 1. Обнуляем reply_to_message_id в сообщениях (самоссылка)
+        UPDATE messages SET reply_to_message_id = NULL WHERE bot_id = $1;
+        
+        -- 2. Обнуляем last_message_id в чатах ПЕРЕД удалением сообщений
+        UPDATE chats SET last_message_id = NULL WHERE bot_id = $1;
+        
+        -- 3. Обнуляем last_read_message_id в chat_unread_counts
+        UPDATE chat_unread_counts SET last_read_message_id = NULL 
+        WHERE chat_id IN (SELECT id FROM chats WHERE bot_id = $1);
+        
+        -- 4. Удаляем chat_unread_counts
+        DELETE FROM chat_unread_counts WHERE chat_id IN (SELECT id FROM chats WHERE bot_id = $1);
+        
+        -- 5. Обнуляем message_id в broadcast_recipients
+        UPDATE broadcast_recipients SET message_id = NULL 
+        WHERE message_id IN (SELECT id FROM messages WHERE bot_id = $1);
+        
+        -- 6. Удаляем message_reads
+        DELETE FROM message_reads WHERE message_id IN (SELECT id FROM messages WHERE bot_id = $1);
+        
+        -- 7. Удаляем сообщения
+        DELETE FROM messages WHERE bot_id = $1;
+        
+        -- 8. Удаляем broadcast_recipients по chat_id и bot_id
+        DELETE FROM broadcast_recipients WHERE chat_id IN (SELECT id FROM chats WHERE bot_id = $1);
+        DELETE FROM broadcast_recipients WHERE bot_id = $1;
+        
+        -- 9. Удаляем чаты
+        DELETE FROM chats WHERE bot_id = $1;
+        
+        -- 10. Обнуляем bot_id в workflows
+        UPDATE bot_workflows SET bot_id = NULL WHERE bot_id = $1;
+        
+        -- 11. Удаляем бота
+        DELETE FROM bots WHERE id = $1;
+      `, [botId]);
+
+      // Обновляем workflows, где botId есть в массиве botIds
+      const allWorkflows = await this.workflowsRepository.find();
+      for (const workflow of allWorkflows) {
+        if (Array.isArray(workflow.botIds) && workflow.botIds.includes(botId)) {
+          workflow.botIds = workflow.botIds.filter(id => id !== botId);
+          await this.workflowsRepository.save(workflow);
+          this.logger.log(`Удален botId из массива botIds в workflow ${workflow.id}`);
+        }
+      }
+
+      this.logger.log(`Бот ${botId} успешно удален`);
+    } catch (error) {
+      this.logger.error(`Ошибка при удалении бота ${botId}:`, error);
+      this.logger.error(`Детали ошибки:`, JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Stack trace:`, errorStack);
+      
+      throw new Error(`Не удалось удалить бота: ${errorMessage}`);
+    }
   }
 
   async setMessageReaction(

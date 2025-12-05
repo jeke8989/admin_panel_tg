@@ -31,6 +31,11 @@ export class CreateWorkflowDto {
   isActive?: boolean;
 
   @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  botIds?: string[];
+
+  @IsArray()
   @ValidateNested({ each: true })
   @Type(() => WorkflowNodeDto)
   nodes: WorkflowNodeDto[];

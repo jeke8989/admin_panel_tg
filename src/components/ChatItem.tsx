@@ -56,33 +56,31 @@ export const ChatItem = ({ chat, isActive, onClick }: ChatItemProps) => {
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center min-w-0">
-            <h3 className="text-white font-medium truncate">{chat.name}</h3>
-            {chat.user?.startParam && (
-              <span className="ml-2 px-2 py-0.5 text-[10px] font-bold bg-purple-600 text-white rounded-full flex-shrink-0 shadow-sm">
-                {chat.user?.startParam}
-              </span>
-            )}
-          </div>
-          <span className="text-gray-400 text-xs flex-shrink-0 ml-2">
-            {formatTime(chat.lastMessageTime)}
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-gray-400 text-sm truncate">{chat.lastMessage}</p>
+          <h3 className="text-white font-medium truncate">{chat.name}</h3>
           {chat.unreadCount > 0 && (
-            <span className="flex-shrink-0 bg-blue-500 text-white text-xs font-semibold rounded-full px-2 py-0.5 min-w-[20px] text-center">
+            <span className="flex-shrink-0 bg-blue-500 text-white text-xs font-semibold rounded-full px-2 py-0.5 min-w-[20px] text-center ml-2">
               {chat.unreadCount}
             </span>
           )}
         </div>
-        {chat.botUsername && (
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-gray-500 text-xs truncate">
-              @{chat.botUsername}
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-gray-400 text-sm truncate">{chat.lastMessage || 'Нет сообщений'}</p>
+          <span className="text-gray-400 text-xs flex-shrink-0">
+            {formatTime(chat.lastMessageTime)}
+          </span>
+        </div>
+        <div className="text-gray-500 text-xs mt-1 flex items-center gap-3">
+          {chat.user?.startParam && (
+            <span className="bg-purple-600/20 text-purple-400 px-2 py-0.5 rounded">
+              {chat.user.startParam}
             </span>
+          )}
+          {chat.botUsername && (
+            <span>@{chat.botUsername}</span>
+          )}
+          {chat.botUsername && (
             <span
-              className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${
+              className={`px-2 py-0.5 rounded ${
                 chat.isBotBlocked
                   ? 'bg-red-500/20 text-red-400'
                   : 'bg-green-500/20 text-green-400'
@@ -90,8 +88,8 @@ export const ChatItem = ({ chat, isActive, onClick }: ChatItemProps) => {
             >
               {chat.isBotBlocked ? 'Заблокирован' : 'Активен'}
             </span>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

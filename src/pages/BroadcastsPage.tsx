@@ -3,6 +3,8 @@ import type { Broadcast, BroadcastStatistics } from '../types';
 import { getBroadcasts, getBroadcastById, getBroadcastStatistics, sendBroadcast, deleteBroadcast, copyBroadcast } from '../utils/api';
 import { CreateBroadcastModal } from '../components/CreateBroadcastModal';
 import { BroadcastList } from '../components/BroadcastList';
+import { useToast } from '../components/ToastProvider';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 interface BroadcastsPageProps {
   activeBroadcastId?: string | null;
@@ -19,11 +21,17 @@ export const BroadcastsPage = ({
 }: BroadcastsPageProps = {}) => {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedBroadcastId, setSelectedBroadcastId] = useState<string | null>(activeBroadcastId || null);
+  // Инициализируем selectedBroadcastId только если activeBroadcastId явно передан и не null
+  const [selectedBroadcastId, setSelectedBroadcastId] = useState<string | null>(
+    activeBroadcastId && activeBroadcastId !== null ? activeBroadcastId : null
+  );
   const [selectedBroadcast, setSelectedBroadcast] = useState<Broadcast | null>(null);
   const [broadcastStatistics, setBroadcastStatistics] = useState<BroadcastStatistics | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [broadcastToDelete, setBroadcastToDelete] = useState<Broadcast | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const { showToast } = useToast();
 
   useEffect(() => {
     loadBroadcasts();
@@ -40,8 +48,17 @@ export const BroadcastsPage = ({
       setIsLoading(true);
       const broadcastsList = await getBroadcasts();
       setBroadcasts(broadcastsList);
+
+      // Если ничего не выбрано — автоматически выбираем первую рассылку
+      if (!selectedBroadcastId && broadcastsList.length > 0) {
+        const firstId = broadcastsList[0].id;
+        setSelectedBroadcastId(firstId);
+        onBroadcastSelect?.(firstId);
+        await loadBroadcastDetails(firstId);
+      }
     } catch (error) {
       console.error('Error loading broadcasts:', error);
+      showToast('Ошибка при загрузке рассылок', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -74,29 +91,38 @@ export const BroadcastsPage = ({
       }
     } catch (error) {
       console.error('Error sending broadcast:', error);
-      alert('Ошибка при отправке рассылки');
+      showToast('Ошибка при отправке рассылки', 'error');
     }
   };
 
   const handleDeleteBroadcast = async (id: string) => {
-    if (!confirm('Вы уверены, что хотите удалить эту рассылку?')) {
-      return;
-    }
+    const target = broadcasts.find((b) => b.id === id);
+    if (!target) return;
+    setBroadcastToDelete(target);
+  };
+
+  const confirmDeleteBroadcast = async () => {
+    if (!broadcastToDelete) return;
+    setIsDeleting(true);
     try {
-      await deleteBroadcast(id);
+      await deleteBroadcast(broadcastToDelete.id);
       await loadBroadcasts();
-      if (selectedBroadcastId === id) {
+      if (selectedBroadcastId === broadcastToDelete.id) {
         setSelectedBroadcastId(null);
         setSelectedBroadcast(null);
         setBroadcastStatistics(null);
       }
-      onBroadcastDeleted?.(id);
+      onBroadcastDeleted?.(broadcastToDelete.id);
+      showToast('Рассылка удалена', 'success');
     } catch (error) {
       console.error('Error deleting broadcast:', error);
       const errorMessage = error && typeof error === 'object' && 'response' in error
         ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
         : 'Ошибка при удалении рассылки';
-      alert(errorMessage || 'Ошибка при удалении рассылки');
+      showToast(errorMessage || 'Ошибка при удалении рассылки', 'error');
+    } finally {
+      setIsDeleting(false);
+      setBroadcastToDelete(null);
     }
   };
 
@@ -104,7 +130,7 @@ export const BroadcastsPage = ({
     try {
       const copiedBroadcast = await copyBroadcast(id);
       await loadBroadcasts();
-      alert('Рассылка успешно скопирована!');
+      showToast('Рассылка успешно скопирована!', 'success');
       // Выбираем скопированную рассылку
       await handleBroadcastSelect(copiedBroadcast.id);
       await loadBroadcastDetails(copiedBroadcast.id);
@@ -114,7 +140,7 @@ export const BroadcastsPage = ({
       const errorMessage = error && typeof error === 'object' && 'response' in error
         ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
         : 'Ошибка при копировании рассылки';
-      alert(errorMessage || 'Ошибка при копировании рассылки');
+      showToast(errorMessage || 'Ошибка при копировании рассылки', 'error');
     }
   };
 
@@ -124,10 +150,16 @@ export const BroadcastsPage = ({
   };
 
   useEffect(() => {
-    if (activeBroadcastId && activeBroadcastId !== selectedBroadcastId) {
+    // Синхронизируем selectedBroadcastId с activeBroadcastId только если activeBroadcastId явно установлен
+    // Если activeBroadcastId === null или undefined, это означает, что выбор должен быть очищен
+    if (activeBroadcastId === null || activeBroadcastId === undefined) {
+      setSelectedBroadcastId(null);
+      setSelectedBroadcast(null);
+      setBroadcastStatistics(null);
+    } else if (activeBroadcastId && activeBroadcastId !== selectedBroadcastId) {
       setSelectedBroadcastId(activeBroadcastId);
     }
-  }, [activeBroadcastId]);
+  }, [activeBroadcastId, selectedBroadcastId]);
 
 
   return (
@@ -150,6 +182,16 @@ export const BroadcastsPage = ({
           onSuccess={handleCreateBroadcast}
         />
       )}
+      <ConfirmModal
+        isOpen={!!broadcastToDelete}
+        title="Удалить рассылку?"
+        message={broadcastToDelete ? `Вы уверены, что хотите удалить рассылку "${broadcastToDelete.name}"?` : ''}
+        confirmText="Удалить"
+        cancelText="Отменить"
+        isLoading={isDeleting}
+        onConfirm={confirmDeleteBroadcast}
+        onCancel={() => setBroadcastToDelete(null)}
+      />
     </>
   );
 };

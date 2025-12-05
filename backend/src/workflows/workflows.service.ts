@@ -29,6 +29,15 @@ export class WorkflowsService {
     });
   }
 
+  // Универсальные сценарии (без привязки к конкретному боту)
+  async findAllUniversal(): Promise<BotWorkflow[]> {
+    return this.workflowsRepository.find({
+      where: { botId: null },
+      relations: ['nodes', 'connections'],
+      order: { updatedAt: 'DESC' },
+    });
+  }
+
   async findOne(id: string): Promise<BotWorkflow> {
     const workflow = await this.workflowsRepository.findOne({
       where: { id },
@@ -43,11 +52,12 @@ export class WorkflowsService {
   }
 
   async create(botId: string, createWorkflowDto: CreateWorkflowDto): Promise<BotWorkflow> {
-    const { nodes, connections, ...workflowData } = createWorkflowDto;
+    const { nodes, connections, botIds, ...workflowData } = createWorkflowDto;
 
     const workflow = this.workflowsRepository.create({
       ...workflowData,
       botId,
+      botIds: botIds || null,
     });
 
     const savedWorkflow = await this.workflowsRepository.save(workflow);
@@ -101,6 +111,22 @@ export class WorkflowsService {
     // So we must handle the relational mapping.
     
     // Let's implement a proper save with ID mapping.
+    return this.saveWorkflowWithNodes(savedWorkflow, nodes, connections);
+  }
+
+  // Создание универсального сценария
+  async createUniversal(createWorkflowDto: CreateWorkflowDto): Promise<BotWorkflow> {
+    const { nodes, connections, botIds, ...workflowData } = createWorkflowDto;
+
+    const workflow = this.workflowsRepository.create({
+      ...workflowData,
+      botId: null, // Универсальный сценарий не привязан к конкретному боту
+      botIds: Array.isArray(botIds) ? botIds : (botIds || []),
+    });
+
+    console.log(`[WorkflowsService] Creating universal workflow, botIds: ${JSON.stringify(workflow.botIds)}`);
+    const savedWorkflow = await this.workflowsRepository.save(workflow);
+    console.log(`[WorkflowsService] Saved workflow ${savedWorkflow.id}, botIds: ${JSON.stringify(savedWorkflow.botIds)}`);
     return this.saveWorkflowWithNodes(savedWorkflow, nodes, connections);
   }
   
@@ -158,10 +184,14 @@ export class WorkflowsService {
   async update(id: string, updateWorkflowDto: UpdateWorkflowDto): Promise<BotWorkflow> {
     const workflow = await this.findOne(id);
     
-    const { nodes, connections, ...workflowData } = updateWorkflowDto;
+    const { nodes, connections, botIds, ...workflowData } = updateWorkflowDto;
 
     // Update workflow properties
     Object.assign(workflow, workflowData);
+    if (botIds !== undefined) {
+      workflow.botIds = Array.isArray(botIds) ? botIds : (botIds || []);
+      console.log(`[WorkflowsService] Updating workflow ${id}, botIds: ${JSON.stringify(workflow.botIds)}`);
+    }
     await this.workflowsRepository.save(workflow);
 
     // If nodes are provided, we replace the entire graph (simplest approach for now)

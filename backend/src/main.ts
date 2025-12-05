@@ -3,10 +3,19 @@ import { config } from 'dotenv';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, BadRequestException } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 
 config();
 
 async function bootstrap() {
+  // Создаём папку uploads, если её нет
+  const uploadsDir = join(process.cwd(), 'uploads');
+  if (!existsSync(uploadsDir)) {
+    mkdirSync(uploadsDir, { recursive: true });
+    console.log(`Created uploads directory: ${uploadsDir}`);
+  }
+
   const app = await NestFactory.create(AppModule);
   
   // Устанавливаем глобальный префикс для API

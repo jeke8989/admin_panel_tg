@@ -22,13 +22,13 @@ interface ReactFlowNode {
 
 interface NodeSettingsPanelProps {
   node: ReactFlowNode | null;
-  botId: string;
+  botIds: string[];
   onChange: (nodeId: string, data: ReactFlowNode['data']) => void;
   onClose: () => void;
   onDelete: (nodeId: string) => void;
 }
 
-export const NodeSettingsPanel = ({ node, botId, onChange, onClose, onDelete }: NodeSettingsPanelProps) => {
+export const NodeSettingsPanel = ({ node, botIds, onChange, onClose, onDelete }: NodeSettingsPanelProps) => {
   const [label, setLabel] = useState('');
   const [config, setConfig] = useState<ReactFlowNode['data']>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -250,7 +250,7 @@ export const NodeSettingsPanel = ({ node, botId, onChange, onClose, onDelete }: 
                        'Анимация'}
                     </label>
                     <FileUploader
-                      botId={botId}
+                      botId={botIds[0] || ''}
                       onFileSelect={(fileId, fileUrl) => {
                         handleChange('mediaFile', fileId);
                         if (fileUrl !== undefined) {

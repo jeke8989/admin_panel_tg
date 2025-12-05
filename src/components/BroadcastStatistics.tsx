@@ -51,7 +51,7 @@ export const BroadcastStatistics = ({
       {/* Общая статистика */}
       <div>
         <h3 className="text-white font-medium mb-3">Общая статистика</h3>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div className="bg-gray-800 rounded-lg p-4">
             <div className="text-gray-400 text-sm mb-1">Всего получателей</div>
             <div className="text-white text-2xl font-semibold">
@@ -68,12 +68,6 @@ export const BroadcastStatistics = ({
             <div className="text-gray-400 text-sm mb-1">Доставлено</div>
             <div className="text-white text-2xl font-semibold">
               {statistics.delivered}
-            </div>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-4">
-            <div className="text-gray-400 text-sm mb-1">Прочитано</div>
-            <div className="text-white text-2xl font-semibold">
-              {statistics.read} ({statistics.readPercentage}%)
             </div>
           </div>
         </div>
@@ -93,13 +87,12 @@ export const BroadcastStatistics = ({
             <option value={BroadcastRecipientStatus.DELIVERED}>
               Доставлено
             </option>
-            <option value={BroadcastRecipientStatus.READ}>Прочитано</option>
             <option value={BroadcastRecipientStatus.FAILED}>Ошибки</option>
           </select>
         </div>
         <div className="bg-gray-800 rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[800px]">
               <thead className="bg-gray-700/50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase">
@@ -110,9 +103,6 @@ export const BroadcastStatistics = ({
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase">
                     Отправлено
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase">
-                    Прочитано
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase">
                     startParam
@@ -150,11 +140,6 @@ export const BroadcastStatistics = ({
                     <td className="px-4 py-3 text-gray-400 text-sm">
                       {recipient.sentAt
                         ? new Date(recipient.sentAt).toLocaleString('ru-RU')
-                        : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 text-sm">
-                      {recipient.readAt
-                        ? new Date(recipient.readAt).toLocaleString('ru-RU')
                         : '-'}
                     </td>
                     <td className="px-4 py-3">

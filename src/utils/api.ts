@@ -20,6 +20,10 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // Для FormData не устанавливаем Content-Type - браузер установит его автоматически с boundary
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
     return config;
   },
   (error) => {
@@ -224,33 +228,44 @@ export const removeTagFromChat = async (chatId: string, tagId: string): Promise<
   return response.data;
 };
 
-// Workflows API
+// Универсальные сценарии (без привязки к боту)
+export const getWorkflows = async (): Promise<BotWorkflow[]> => {
+  const response = await api.get('/workflows');
+  return response.data;
+};
+
+export const getWorkflowById = async (id: string): Promise<BotWorkflow> => {
+  const response = await api.get(`/workflows/${id}`);
+  return response.data;
+};
+
+export const createWorkflow = async (workflow: Partial<BotWorkflow & { botIds?: string[] }>): Promise<BotWorkflow> => {
+  const response = await api.post('/workflows', workflow);
+  return response.data;
+};
+
+export const updateWorkflow = async (workflowId: string, workflow: Partial<BotWorkflow & { botIds?: string[] }>): Promise<BotWorkflow> => {
+  const response = await api.put(`/workflows/${workflowId}`, workflow);
+  return response.data;
+};
+
+export const deleteWorkflow = async (workflowId: string): Promise<void> => {
+  await api.delete(`/workflows/${workflowId}`);
+};
+
+export const activateWorkflow = async (workflowId: string): Promise<BotWorkflow> => {
+  const response = await api.post(`/workflows/${workflowId}/activate`);
+  return response.data;
+};
+
+export const deactivateWorkflow = async (workflowId: string): Promise<BotWorkflow> => {
+  const response = await api.post(`/workflows/${workflowId}/deactivate`);
+  return response.data;
+};
+
+// Старые методы для обратной совместимости (привязаны к боту)
 export const getBotWorkflows = async (botId: string): Promise<BotWorkflow[]> => {
   const response = await api.get(`/bots/${botId}/workflows`);
-  return response.data;
-};
-
-export const createWorkflow = async (botId: string, workflow: Partial<BotWorkflow>): Promise<BotWorkflow> => {
-  const response = await api.post(`/bots/${botId}/workflows`, workflow);
-  return response.data;
-};
-
-export const updateWorkflow = async (botId: string, workflowId: string, workflow: Partial<BotWorkflow>): Promise<BotWorkflow> => {
-  const response = await api.put(`/bots/${botId}/workflows/${workflowId}`, workflow);
-  return response.data;
-};
-
-export const deleteWorkflow = async (botId: string, workflowId: string): Promise<void> => {
-  await api.delete(`/bots/${botId}/workflows/${workflowId}`);
-};
-
-export const activateWorkflow = async (botId: string, workflowId: string): Promise<BotWorkflow> => {
-  const response = await api.post(`/bots/${botId}/workflows/${workflowId}/activate`);
-  return response.data;
-};
-
-export const deactivateWorkflow = async (botId: string, workflowId: string): Promise<BotWorkflow> => {
-  const response = await api.post(`/bots/${botId}/workflows/${workflowId}/deactivate`);
   return response.data;
 };
 
@@ -322,4 +337,18 @@ export const copyBroadcast = async (id: string): Promise<Broadcast> => {
 
 export const deleteBroadcast = async (id: string): Promise<void> => {
   await api.delete(`/broadcasts/${id}`);
+};
+
+// Upload file to server (for universal workflows)
+export const uploadFileToServer = async (file: File): Promise<{
+  url: string;
+  filename: string;
+  originalName: string;
+  mimetype: string;
+  size: number;
+}> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await api.post('/uploads', formData);
+  return response.data;
 };

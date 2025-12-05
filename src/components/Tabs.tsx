@@ -1,6 +1,6 @@
 interface TabsProps {
-  activeTab: 'chats' | 'bots' | 'broadcasts';
-  onTabChange: (tab: 'chats' | 'bots' | 'broadcasts') => void;
+  activeTab: 'chats' | 'bots' | 'broadcasts' | 'workflows';
+  onTabChange: (tab: 'chats' | 'bots' | 'broadcasts' | 'workflows') => void;
   role?: 'admin' | 'user';
 }
 
@@ -30,6 +30,16 @@ export const Tabs = ({ activeTab, onTabChange, role = 'admin' }: TabsProps) => {
             }`}
           >
             Рассылки
+          </button>
+          <button
+            onClick={() => onTabChange('workflows')}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'workflows'
+                ? 'text-white border-b-2 border-blue-500'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            Сценарии
           </button>
           <button
             onClick={() => onTabChange('bots')}

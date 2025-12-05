@@ -7,6 +7,8 @@ import { TelegramService } from '../../telegram/telegram.service';
 import { Message, MessageType } from '../../entities/Message.entity';
 import { Chat } from '../../entities/Chat.entity';
 import { Message as TelegramMessage } from 'telegraf/typings/core/types/typegram';
+import { createReadStream, existsSync } from 'fs';
+import { join } from 'path';
 
 @Injectable()
 export class ActionExecutor extends NodeExecutor {
@@ -32,10 +34,78 @@ export class ActionExecutor extends NodeExecutor {
 
     switch (type) {
         case 'action-message': {
+            console.log(`[ActionExecutor] action-message config:`, JSON.stringify(config, null, 2));
             const messageType: string = config.messageType || 'text';
             const text: string = config.text || '';
-            const mediaFile: string | undefined = config.mediaFile;
+            // Используем mediaFile, или извлекаем путь из mediaPreviewUrl если mediaFile пустой
+            let mediaFile: string | undefined = config.mediaFile;
+            if (!mediaFile && config.mediaPreviewUrl) {
+              // Извлекаем путь из URL (например, из "http://localhost:3000/uploads/file.png" -> "/uploads/file.png")
+              const previewUrl = config.mediaPreviewUrl as string;
+              const uploadsMatch = previewUrl.match(/\/uploads\/[^?#]+/);
+              if (uploadsMatch) {
+                mediaFile = uploadsMatch[0];
+                console.log(`[ActionExecutor] Extracted mediaFile from mediaPreviewUrl: ${mediaFile}`);
+              }
+            }
             const buttons: Array<Array<{ text: string; callback_data?: string }>> | undefined = config.buttons || [];
+            
+            console.log(`[ActionExecutor] messageType: ${messageType}, mediaFile: ${mediaFile || 'empty'}, text: ${text || 'empty'}`);
+
+            // Для файлов с нашего сервера (/uploads/), создаём поток из локального файла
+            // Telegram не может скачать файлы с localhost
+            let mediaSource: string | { source: ReturnType<typeof createReadStream>; filename?: string } | undefined;
+            let originalFilename: string | undefined;
+            
+            if (mediaFile && mediaFile.startsWith('/uploads/')) {
+              // Путь к файлу на диске
+              const localPath = join(process.cwd(), mediaFile);
+              console.log(`[ActionExecutor] Checking local file: ${localPath}`);
+              
+              // Извлекаем имя файла (например, uuid.xlsx)
+              const fileName = mediaFile.split('/').pop() || 'file';
+              // Определяем расширение файла
+              const fileExtension = fileName.includes('.') ? fileName.split('.').pop() : '';
+              // Формируем имя файла для Telegram (используем оригинальное имя из конфига или создаём читаемое имя)
+              const originalName = config.originalFileName as string;
+              if (originalName) {
+                originalFilename = originalName;
+              } else if (fileExtension) {
+                // Создаём читаемое имя на основе расширения
+                const extensionNames: Record<string, string> = {
+                  'xlsx': 'document.xlsx',
+                  'xls': 'document.xls',
+                  'doc': 'document.doc',
+                  'docx': 'document.docx',
+                  'pdf': 'document.pdf',
+                  'png': 'image.png',
+                  'jpg': 'image.jpg',
+                  'jpeg': 'image.jpeg',
+                  'gif': 'image.gif',
+                  'mp4': 'video.mp4',
+                  'mp3': 'audio.mp3',
+                };
+                originalFilename = extensionNames[fileExtension.toLowerCase()] || `file.${fileExtension}`;
+              } else {
+                originalFilename = fileName;
+              }
+              
+              if (existsSync(localPath)) {
+                // Создаём поток для отправки файла с именем
+                mediaSource = { 
+                  source: createReadStream(localPath),
+                  filename: originalFilename
+                };
+                console.log(`[ActionExecutor] Using local file stream for: ${localPath}, filename: ${originalFilename}`);
+              } else {
+                console.error(`[ActionExecutor] Local file not found: ${localPath}`);
+                mediaSource = undefined;
+              }
+            } else if (mediaFile) {
+              // Для внешних URL или file_id используем как есть
+              mediaSource = mediaFile;
+              console.log(`[ActionExecutor] Using external URL or file_id: ${mediaFile}`);
+            }
 
             // Convert buttons format if needed
             const inlineKeyboard = Array.isArray(buttons) && buttons.length > 0 
@@ -68,15 +138,31 @@ export class ActionExecutor extends NodeExecutor {
                 }
 
                 case 'photo': {
-                  if (!mediaFile) {
-                    console.error('Media file is required for photo message');
-                    return false;
+                  if (!mediaSource) {
+                    console.warn('[ActionExecutor] Media file is missing for photo message, falling back to text');
+                    if (text) {
+                      // Fallback: отправляем текстовое сообщение
+                      const msg = await this.telegramService.sendMessage(
+                        botId, 
+                        telegramChatId, 
+                        text, 
+                        undefined, 
+                        inlineKeyboard
+                      );
+                      sentMessage = msg;
+                      dbMessageType = MessageType.TEXT;
+                      telegramMessageId = msg.message_id;
+                    } else {
+                      console.error('[ActionExecutor] No media file and no text - nothing to send');
+                      return false;
+                    }
+                    break;
                   }
-                  console.log(`[ActionExecutor] Sending photo message. Caption: "${text}"`);
+                  console.log(`[ActionExecutor] Sending photo message. Caption: "${text}", mediaSource type: ${typeof mediaSource === 'object' ? 'stream' : 'string'}`);
                   const msg = await this.telegramService.sendPhoto(
                     botId,
                     telegramChatId,
-                    mediaFile,
+                    mediaSource as any,
                     text || undefined,
                     undefined,
                     inlineKeyboard
@@ -89,14 +175,14 @@ export class ActionExecutor extends NodeExecutor {
                 }
 
                 case 'video': {
-                  if (!mediaFile) {
+                  if (!mediaSource) {
                     console.error('Media file is required for video message');
                     return false;
                   }
                   const msg = await this.telegramService.sendVideo(
                     botId,
                     telegramChatId,
-                    mediaFile,
+                    mediaSource as any,
                     text || undefined,
                     undefined,
                     inlineKeyboard
@@ -109,14 +195,14 @@ export class ActionExecutor extends NodeExecutor {
                 }
 
                 case 'document': {
-                  if (!mediaFile) {
+                  if (!mediaSource) {
                     console.error('Media file is required for document message');
                     return false;
                   }
                   const msg = await this.telegramService.sendDocument(
                     botId,
                     telegramChatId,
-                    mediaFile,
+                    mediaSource as any,
                     text || undefined,
                     undefined,
                     inlineKeyboard
@@ -129,14 +215,14 @@ export class ActionExecutor extends NodeExecutor {
                 }
 
                 case 'audio': {
-                  if (!mediaFile) {
+                  if (!mediaSource) {
                     console.error('Media file is required for audio message');
                     return false;
                   }
                   const msg = await this.telegramService.sendAudio(
                     botId,
                     telegramChatId,
-                    mediaFile,
+                    mediaSource as any,
                     text || undefined,
                     undefined,
                     inlineKeyboard
@@ -149,14 +235,14 @@ export class ActionExecutor extends NodeExecutor {
                 }
 
                 case 'voice': {
-                  if (!mediaFile) {
+                  if (!mediaSource) {
                     console.error('Media file is required for voice message');
                     return false;
                   }
                   const msg = await this.telegramService.sendVoice(
                     botId,
                     telegramChatId,
-                    mediaFile,
+                    mediaSource as any,
                     undefined,
                     inlineKeyboard
                   );
@@ -168,14 +254,14 @@ export class ActionExecutor extends NodeExecutor {
                 }
 
                 case 'animation': {
-                  if (!mediaFile) {
+                  if (!mediaSource) {
                     console.error('Media file is required for animation message');
                     return false;
                   }
                   const msg = await this.telegramService.sendAnimation(
                     botId,
                     telegramChatId,
-                    mediaFile,
+                    mediaSource as any,
                     text || undefined,
                     undefined,
                     inlineKeyboard

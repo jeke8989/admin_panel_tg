@@ -1,4 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useToast } from '../components/ToastProvider';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { useSearchParams } from 'react-router-dom';
 import { ChatList } from '../components/ChatList';
 import { ChatWindow } from '../components/ChatWindow';
 import { DeleteMessageModal } from '../components/DeleteMessageModal';
@@ -8,19 +11,31 @@ import { BotDetails } from '../components/BotDetails';
 import { AddBotModal } from '../components/AddBotModal';
 import { DeleteBotModal } from '../components/DeleteBotModal';
 import { BroadcastsPage } from './BroadcastsPage';
+import { WorkflowsPage } from './WorkflowsPage';
 import { BroadcastDetails } from '../components/BroadcastDetails';
-import { getBroadcastById, getBroadcastStatistics, sendBroadcast, deleteBroadcast, copyBroadcast } from '../utils/api';
+import { WorkflowEditor } from '../components/WorkflowEditor';
+import { getBroadcastById, getBroadcastStatistics, sendBroadcast, deleteBroadcast, copyBroadcast, getWorkflowById } from '../utils/api';
 import type { Broadcast, BroadcastStatistics } from '../types';
 import { api, sendMessageWithMedia, markChatAsRead, deleteMessage, clearChatHistory, getBots, createBot, deleteBot, toggleBotStatus, getBotStatistics, getAllTags } from '../utils/api';
 import { useAuth } from '../contexts/AuthContext';
-import type { Chat, Message, MessageReaction, Bot, BotStatistics, Tag } from '../types';
+import type { Chat, Message, MessageReaction, Bot, BotStatistics, Tag, BotWorkflow } from '../types';
 import { MessageType } from '../types';
+
+type TabType = 'chats' | 'bots' | 'broadcasts' | 'workflows';
+
+const isValidTab = (tab: string | null): tab is TabType => {
+  return tab === 'chats' || tab === 'bots' || tab === 'broadcasts' || tab === 'workflows';
+};
 
 export const ChatsPage = () => {
   const { logout, admin } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { showToast } = useToast();
   
-  // Tab state
-  const [activeTab, setActiveTab] = useState<'chats' | 'bots' | 'broadcasts'>('chats');
+  // Tab state - читаем из URL или используем значение по умолчанию
+  const tabFromUrl = searchParams.get('tab');
+  const initialTab: TabType = isValidTab(tabFromUrl) ? tabFromUrl : 'chats';
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   
   // Chats state
   const [chats, setChats] = useState<Chat[]>([]);
@@ -47,6 +62,33 @@ export const ChatsPage = () => {
   const [activeBroadcastId, setActiveBroadcastId] = useState<string | null>(null);
   const [selectedBroadcast, setSelectedBroadcast] = useState<Broadcast | null>(null);
   const [broadcastStatistics, setBroadcastStatistics] = useState<BroadcastStatistics | null>(null);
+
+  // Workflows state
+  const [activeWorkflowId, setActiveWorkflowId] = useState<string | null>(null);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<BotWorkflow | null>(null);
+  const [broadcastToDeleteId, setBroadcastToDeleteId] = useState<string | null>(null);
+  const [isDeletingBroadcast, setIsDeletingBroadcast] = useState(false);
+
+  // Синхронизация таба с URL параметром при загрузке и браузерной навигации
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('tab');
+    if (tabFromUrl && isValidTab(tabFromUrl) && tabFromUrl !== activeTab) {
+      // Если в URL есть валидный таб и он отличается от текущего - обновляем состояние
+      setActiveTab(tabFromUrl);
+    } else if (!tabFromUrl && activeTab !== 'chats') {
+      // Если в URL нет параметра tab, но активный таб не 'chats', обновляем URL
+      setSearchParams({ tab: activeTab }, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]); // Только при изменении searchParams (браузерная навигация)
+
+  // При первой загрузке, если в URL нет параметра tab, добавляем его
+  useEffect(() => {
+    if (!searchParams.get('tab')) {
+      setSearchParams({ tab: 'chats' }, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Только при монтировании
 
   useEffect(() => {
     loadTags();
@@ -514,7 +556,7 @@ export const ChatsPage = () => {
       loadChats();
     } catch (error) {
       console.error('Error sending message:', error);
-      alert('Ошибка при отправке сообщения. Проверьте подключение.');
+      showToast('Ошибка при отправке сообщения. Проверьте подключение.', 'error');
     }
   };
 
@@ -594,7 +636,7 @@ export const ChatsPage = () => {
       setMessageToDelete(null);
     } catch (error) {
       console.error('Error deleting message:', error);
-      alert('Ошибка при удалении сообщения');
+      showToast('Ошибка при удалении сообщения', 'error');
     } finally {
       setIsDeleting(false);
     }
@@ -652,7 +694,7 @@ export const ChatsPage = () => {
       await loadChats();
     } catch (error) {
       console.error('Error clearing chat history:', error);
-      alert('Ошибка при очистке истории чата');
+      showToast('Ошибка при очистке истории чата', 'error');
     }
   };
 
@@ -685,11 +727,15 @@ export const ChatsPage = () => {
     }
   };
 
-  const handleTabChange = (tab: 'chats' | 'bots' | 'broadcasts') => {
+  const handleTabChange = (tab: TabType) => {
     // Пользователь с ролью user видит только вкладку чатов
     if (admin?.role === 'user' && tab === 'bots') {
       return;
     }
+    
+    // Обновляем URL параметр
+    setSearchParams({ tab });
+    
     setActiveTab(tab);
     // Сбрасываем выбранные элементы при переключении табов
     if (tab !== 'broadcasts') {
@@ -710,6 +756,10 @@ export const ChatsPage = () => {
     if (tab !== 'chats') {
       setActiveChatId(null);
     }
+    if (tab !== 'workflows') {
+      setActiveWorkflowId(null);
+      setSelectedWorkflow(null);
+    }
   };
 
   const handleBroadcastSelect = async (id: string) => {
@@ -726,6 +776,20 @@ export const ChatsPage = () => {
     }
   };
 
+  const handleWorkflowSelect = async (id: string) => {
+    try {
+      setActiveWorkflowId(id);
+      const workflow = await getWorkflowById(id);
+      console.log('[ChatsPage] Workflow loaded:', workflow);
+      setSelectedWorkflow(workflow);
+    } catch (error) {
+      console.error('[ChatsPage] Error loading workflow details:', error);
+      showToast('Ошибка при загрузке сценария. Проверьте консоль для деталей.', 'error');
+      setActiveWorkflowId(null);
+      setSelectedWorkflow(null);
+    }
+  };
+
   const handleSendBroadcast = async (id: string) => {
     try {
       await sendBroadcast(id);
@@ -739,48 +803,48 @@ export const ChatsPage = () => {
       }
     } catch (error) {
       console.error('Error sending broadcast:', error);
-      alert('Ошибка при отправке рассылки');
+      showToast('Ошибка при отправке рассылки', 'error');
     }
   };
 
   const handleDeleteBroadcast = async (id: string) => {
-    // Подтверждение удаления
-    if (!confirm('Вы уверены, что хотите удалить эту рассылку?')) {
-      return;
-    }
-    
+    setBroadcastToDeleteId(id);
+  };
+
+  const confirmDeleteBroadcast = async () => {
+    if (!broadcastToDeleteId) return;
+    setIsDeletingBroadcast(true);
     try {
-      await deleteBroadcast(id);
+      await deleteBroadcast(broadcastToDeleteId);
       
       // Очищаем состояние если удаляемая рассылка была выбрана
-      if (activeBroadcastId === id) {
+      if (activeBroadcastId === broadcastToDeleteId) {
         setActiveBroadcastId(null);
         setSelectedBroadcast(null);
         setBroadcastStatistics(null);
       }
-      
-      // Вызываем callback для обновления списка рассылок в BroadcastsPage
-      // Это обновит список через loadBroadcasts внутри BroadcastsPage
-      // Но нам нужно найти способ вызвать это из ChatsPage
-      // Пока что просто очищаем состояние - список обновится при следующем открытии таба
+      showToast('Рассылка удалена', 'success');
     } catch (error) {
       console.error('Error deleting broadcast:', error);
       const errorMessage = error && typeof error === 'object' && 'response' in error
         ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
         : 'Ошибка при удалении рассылки';
-      alert(errorMessage || 'Ошибка при удалении рассылки');
+      showToast(errorMessage || 'Ошибка при удалении рассылки', 'error');
+    } finally {
+      setIsDeletingBroadcast(false);
+      setBroadcastToDeleteId(null);
     }
   };
 
   const handleCopyBroadcast = async (id: string) => {
     try {
       const copiedBroadcast = await copyBroadcast(id);
-      alert('Рассылка успешно скопирована!');
+      showToast('Рассылка успешно скопирована!', 'success');
       // Выбираем скопированную рассылку
       await handleBroadcastSelect(copiedBroadcast.id);
     } catch (error) {
       console.error('Error copying broadcast:', error);
-      alert('Ошибка при копировании рассылки');
+      showToast('Ошибка при копировании рассылки', 'error');
     }
   };
 
@@ -800,7 +864,7 @@ export const ChatsPage = () => {
       setIsAddBotModalOpen(false);
     } catch (error) {
       console.error('Error adding bot:', error);
-      alert('Ошибка при добавлении бота. Проверьте токен.');
+      showToast('Ошибка при добавлении бота. Проверьте токен.', 'error');
     } finally {
       setIsAddingBot(false);
     }
@@ -846,7 +910,7 @@ export const ChatsPage = () => {
       setBotToDelete(null);
     } catch (error) {
       console.error('Error deleting bot:', error);
-      alert('Ошибка при удалении бота');
+      showToast('Ошибка при удалении бота', 'error');
     } finally {
       setIsDeletingBot(false);
     }
@@ -866,105 +930,132 @@ export const ChatsPage = () => {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="w-1/3 min-w-[320px] max-w-[400px] flex flex-col border-r border-gray-700">
-          {/* Табы */}
-          <Tabs activeTab={activeTab} onTabChange={handleTabChange} role={admin?.role} />
-          
-          {/* Контент в зависимости от активного таба */}
-          {activeTab === 'chats' ? (
-            isLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-white">Загрузка чатов...</div>
+        <>
+          <div className="w-1/3 min-w-[320px] max-w-[400px] flex flex-col border-r border-gray-700">
+            {/* Табы */}
+            <Tabs activeTab={activeTab} onTabChange={handleTabChange} role={admin?.role} />
+            
+            {/* Контент в зависимости от активного таба */}
+            {activeTab === 'chats' ? (
+                isLoading ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="text-white">Загрузка чатов...</div>
+                </div>
+              ) : (
+                <ChatList
+                    chats={filteredChats}
+                  activeChatId={activeChatId}
+                  onChatSelect={handleChatSelect}
+                    searchQuery={searchQuery}
+                    onSearchChange={setSearchQuery}
+                    tags={tags}
+                    selectedTagFilter={selectedTagFilter}
+                    onTagFilterChange={setSelectedTagFilter}
+                    unreadCounts={unreadCountsByCategory}
+                  />
+                )
+              ) : activeTab === 'broadcasts' ? (
+                <BroadcastsPage 
+                  activeBroadcastId={activeBroadcastId}
+                  onBroadcastSelect={handleBroadcastSelect}
+                  onBroadcastDeleted={(id) => {
+                    // Очищаем состояние если удаляемая рассылка была выбрана
+                    if (activeBroadcastId === id) {
+                      setActiveBroadcastId(null);
+                      setSelectedBroadcast(null);
+                      setBroadcastStatistics(null);
+                    }
+                  }}
+                  onBroadcastCopied={(id) => {
+                    handleBroadcastSelect(id);
+                  }}
+                />
+              ) : activeTab === 'workflows' ? (
+                <WorkflowsPage 
+                  activeWorkflowId={activeWorkflowId}
+                  onWorkflowSelect={handleWorkflowSelect}
+                  onWorkflowDeleted={(id) => {
+                    if (activeWorkflowId === id) {
+                      setActiveWorkflowId(null);
+                      setSelectedWorkflow(null);
+                    }
+                  }}
+                />
+              ) : (
+                <BotList
+                  bots={bots}
+                  activeBotId={activeBotId}
+                  onBotSelect={handleBotSelect}
+                  onAddBot={handleAddBot}
+                />
+              )}
             </div>
-          ) : (
-            <ChatList
-                chats={filteredChats}
-              activeChatId={activeChatId}
-              onChatSelect={handleChatSelect}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-                tags={tags}
-                selectedTagFilter={selectedTagFilter}
-                onTagFilterChange={setSelectedTagFilter}
-                unreadCounts={unreadCountsByCategory}
-              />
-            )
-          ) : activeTab === 'broadcasts' ? (
-            <BroadcastsPage 
-              activeBroadcastId={activeBroadcastId}
-              onBroadcastSelect={handleBroadcastSelect}
-              onBroadcastDeleted={(id) => {
-                // Очищаем состояние если удаляемая рассылка была выбрана
-                if (activeBroadcastId === id) {
-                  setActiveBroadcastId(null);
-                  setSelectedBroadcast(null);
-                  setBroadcastStatistics(null);
-                }
-              }}
-              onBroadcastCopied={(id) => {
-                handleBroadcastSelect(id);
-              }}
-            />
-          ) : (
-            <BotList
-              bots={bots}
-              activeBotId={activeBotId}
-              onBotSelect={handleBotSelect}
-              onAddBot={handleAddBot}
-            />
-          )}
+            
+            {/* Правая панель */}
+            <div className="flex-1 h-full overflow-hidden">
+              {activeTab === 'chats' ? (
+                <ChatWindow
+                  chat={activeChat}
+                  messages={activeChatMessages}
+                  onSendMessage={handleSendMessage}
+                  onDeleteChat={handleDeleteChat}
+                  onClearHistory={handleClearHistory}
+                  onDeleteMessage={handleDeleteMessageClick}
+                  onMessageUpdate={handleMessageUpdate}
+                  onChatUpdate={handleChatUpdate}
+                  onTagFilterChange={setSelectedTagFilter}
+                  onReloadChats={loadChats}
+                  scrollTrigger={scrollTrigger}
+                />
+              ) : activeTab === 'broadcasts' ? (
+                selectedBroadcast ? (
+                  <BroadcastDetails
+                    broadcast={selectedBroadcast}
+                    statistics={broadcastStatistics}
+                    onSend={() => selectedBroadcast?.id && handleSendBroadcast(selectedBroadcast.id)}
+                    onDelete={() => selectedBroadcast?.id && handleDeleteBroadcast(selectedBroadcast.id)}
+                    onCopy={() => selectedBroadcast?.id && handleCopyBroadcast(selectedBroadcast.id)}
+                    onRefresh={async () => {
+                      if (activeBroadcastId) {
+                        const [broadcast, statistics] = await Promise.all([
+                          getBroadcastById(activeBroadcastId),
+                          getBroadcastStatistics(activeBroadcastId),
+                        ]);
+                        setSelectedBroadcast(broadcast);
+                        setBroadcastStatistics(statistics);
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center bg-gray-900 text-gray-500">
+                    <p>Выберите рассылку для просмотра деталей</p>
+                  </div>
+                )
+              ) : activeTab === 'workflows' ? (
+                selectedWorkflow ? (
+                  <WorkflowEditor 
+                    workflow={selectedWorkflow} 
+                    onClose={async () => {
+                      setActiveWorkflowId(null);
+                      setSelectedWorkflow(null);
+                    }} 
+                  />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center bg-gray-900 text-gray-500">
+                    <p>Выберите сценарий для редактирования</p>
+                  </div>
+                )
+              ) : (
+                <BotDetails
+                  bot={bots.find((b) => b.id === activeBotId) || null}
+                  statistics={botStatistics}
+                  onDeleteBot={handleDeleteBotClick}
+                  onToggleStatus={handleToggleBotStatus}
+                />
+              )}
+            </div>
+          </>
         </div>
-        
-        {/* Правая панель */}
-        <div className="flex-1 h-full overflow-hidden">
-          {activeTab === 'chats' ? (
-            <ChatWindow
-              chat={activeChat}
-              messages={activeChatMessages}
-              onSendMessage={handleSendMessage}
-              onDeleteChat={handleDeleteChat}
-              onClearHistory={handleClearHistory}
-              onDeleteMessage={handleDeleteMessageClick}
-              onMessageUpdate={handleMessageUpdate}
-              onChatUpdate={handleChatUpdate}
-              onTagFilterChange={setSelectedTagFilter}
-              onReloadChats={loadChats}
-              scrollTrigger={scrollTrigger}
-            />
-          ) : activeTab === 'broadcasts' ? (
-            selectedBroadcast ? (
-              <BroadcastDetails
-                broadcast={selectedBroadcast}
-                statistics={broadcastStatistics}
-                onSend={() => selectedBroadcast?.id && handleSendBroadcast(selectedBroadcast.id)}
-                onDelete={() => selectedBroadcast?.id && handleDeleteBroadcast(selectedBroadcast.id)}
-                onCopy={() => selectedBroadcast?.id && handleCopyBroadcast(selectedBroadcast.id)}
-                onRefresh={async () => {
-                  if (activeBroadcastId) {
-                    const [broadcast, statistics] = await Promise.all([
-                      getBroadcastById(activeBroadcastId),
-                      getBroadcastStatistics(activeBroadcastId),
-                    ]);
-                    setSelectedBroadcast(broadcast);
-                    setBroadcastStatistics(statistics);
-                  }
-                }}
-              />
-            ) : (
-              <div className="h-full w-full flex items-center justify-center bg-gray-900 text-gray-500">
-                <p>Выберите рассылку для просмотра деталей</p>
-              </div>
-            )
-          ) : (
-            <BotDetails
-              bot={bots.find((b) => b.id === activeBotId) || null}
-              statistics={botStatistics}
-              onDeleteBot={handleDeleteBotClick}
-              onToggleStatus={handleToggleBotStatus}
-            />
-          )}
-        </div>
-      </div>
       
       {/* Модальные окна */}
       <DeleteMessageModal
@@ -987,6 +1078,16 @@ export const ChatsPage = () => {
         onConfirm={handleDeleteBotConfirm}
         isLoading={isDeletingBot}
         botName={botToDelete?.username ? `@${botToDelete.username}` : ''}
+      />
+      <ConfirmModal
+        isOpen={!!broadcastToDeleteId}
+        title="Удалить рассылку?"
+        message="Вы уверены, что хотите удалить эту рассылку?"
+        confirmText="Удалить"
+        cancelText="Отменить"
+        isLoading={isDeletingBroadcast}
+        onConfirm={confirmDeleteBroadcast}
+        onCancel={() => setBroadcastToDeleteId(null)}
       />
     </div>
   );

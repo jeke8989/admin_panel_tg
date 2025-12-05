@@ -17,12 +17,15 @@ export class BotWorkflow {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'bot_id' })
-  botId: string;
+  @Column({ name: 'bot_id', nullable: true })
+  botId: string | null;
 
-  @ManyToOne(() => Bot, (bot) => bot.workflows, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Bot, (bot) => bot.workflows, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'bot_id' })
-  bot: Bot;
+  bot: Bot | null;
+
+  @Column({ type: 'jsonb', nullable: true, name: 'bot_ids' })
+  botIds: string[] | null;
 
   @Column({ type: 'varchar', length: 255 })
   name: string;

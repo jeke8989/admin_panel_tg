@@ -86,13 +86,9 @@ export const BroadcastItem = ({ broadcast, isActive, onClick }: BroadcastItemPro
             {broadcast.totalRecipients} {broadcast.totalRecipients === 1 ? 'получатель' : 'получателей'}
           </span>
         </div>
-        {broadcast.status === 'completed' && (
-          <div className="text-gray-500 text-xs mt-1">
-            Отправлено: {broadcast.sentCount} | Прочитано: {broadcast.readCount}
-          </div>
-        )}
         <div className="text-gray-500 text-xs mt-1">
           Создан: {formatDate(broadcast.createdAt)}
+          {broadcast.status === 'completed' && ` • Отправлено: ${broadcast.sentCount}`}
         </div>
       </div>
     </div>

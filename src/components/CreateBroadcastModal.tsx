@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Bot } from '../types';
 import { createBroadcast, getBots, api } from '../utils/api';
+import { useToast } from './ToastProvider';
 
 interface CreateBroadcastModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ export const CreateBroadcastModal = ({
   onClose,
   onSuccess,
 }: CreateBroadcastModalProps) => {
+  const { showToast } = useToast();
   const [name, setName] = useState('');
   const [text, setText] = useState('');
   const [bots, setBots] = useState<Bot[]>([]);
@@ -56,12 +58,12 @@ export const CreateBroadcastModal = ({
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      alert('Введите название рассылки');
+      showToast('Введите название рассылки', 'error');
       return;
     }
 
     if (!text.trim()) {
-      alert('Введите текст сообщения');
+      showToast('Введите текст сообщения', 'error');
       return;
     }
 
@@ -99,7 +101,7 @@ export const CreateBroadcastModal = ({
       const errorMessage = error && typeof error === 'object' && 'response' in error
         ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
         : 'Ошибка при создании рассылки';
-      alert(errorMessage || 'Ошибка при создании рассылки');
+      showToast(errorMessage || 'Ошибка при создании рассылки', 'error');
     } finally {
       setIsLoading(false);
     }

@@ -22,12 +22,48 @@ export class WorkflowExecutorService {
 
   async executeWorkflow(botId: string, triggerType: string, context: any) {
     // 1. Find active workflows for this bot
-    const workflows = await this.workflowsRepository.find({
-      where: { botId, isActive: true },
+    // Ищем сценарии, которые:
+    // - привязаны к конкретному боту (botId === botId)
+    // - или универсальные сценарии, где botIds содержит текущий botId
+    const allWorkflows = await this.workflowsRepository.find({
+      where: { isActive: true },
       relations: ['nodes', 'connections'],
     });
 
-    this.logger.log(`Executing workflows for bot ${botId}, triggerType: ${triggerType}, found ${workflows.length} active workflows`);
+    // Фильтруем сценарии: 
+    // 1. Если botIds заполнен - используем его (новый способ, приоритет)
+    // 2. Иначе используем botId (старый способ)
+    const workflows = allWorkflows.filter(workflow => {
+      const botIdsArray = Array.isArray(workflow.botIds) ? workflow.botIds : [];
+      
+      // Если botIds заполнен - используем его (приоритет над botId)
+      if (botIdsArray.length > 0) {
+        const isIncluded = botIdsArray.includes(botId);
+        this.logger.debug(`Workflow ${workflow.name} - checking botIds: ${JSON.stringify(workflow.botIds)}, botId: ${botId}, included: ${isIncluded}`);
+        return isIncluded;
+      }
+      
+      // Если botIds пустой - проверяем старый botId
+      if (workflow.botId === botId) {
+        this.logger.debug(`Workflow ${workflow.name} matched by legacy botId: ${workflow.botId}`);
+        return true;
+      }
+      
+      return false;
+    });
+
+    this.logger.log(`Executing workflows for bot ${botId}, triggerType: ${triggerType}, found ${workflows.length} active workflows out of ${allWorkflows.length} total`);
+    
+    if (workflows.length === 0) {
+      this.logger.warn(`No workflows found for bot ${botId}. Total active workflows: ${allWorkflows.length}`);
+      allWorkflows.forEach(w => {
+        this.logger.warn(`Workflow: ${w.name}, botId: ${w.botId}, botIds: ${JSON.stringify(w.botIds)}, isActive: ${w.isActive}`);
+      });
+    } else {
+      workflows.forEach(w => {
+        this.logger.log(`Matched workflow: ${w.name}, botId: ${w.botId}, botIds: ${JSON.stringify(w.botIds)}`);
+      });
+    }
 
     for (const workflow of workflows) {
       // 2. Find trigger nodes
@@ -51,10 +87,8 @@ export class WorkflowExecutorService {
   }
 
   private async executeNodeChain(startNode: WorkflowNode, workflow: BotWorkflow, context: any) {
-    let currentNode = startNode;
-    
-    // Simple BFS or just following the single path for now (assuming linear or branching without merging complex logic yet)
-    // We need a queue for BFS if we support parallel execution, but sequential is easier to debug.
+    this.logger.log(`Starting executeNodeChain from node ${startNode.type} (${startNode.id})`);
+    this.logger.debug(`Workflow has ${workflow.nodes.length} nodes and ${workflow.connections.length} connections`);
     
     // Queue of { node, input }
     const queue = [{ node: startNode, input: null }];
@@ -62,35 +96,63 @@ export class WorkflowExecutorService {
     while (queue.length > 0) {
       const { node } = queue.shift()!;
       
+      this.logger.debug(`Processing node: ${node.type} (${node.id})`);
+      
       // Execute node logic (skip trigger as it's already checked, but for others)
       let result: any = true;
       if (!node.type.startsWith('trigger-')) {
         if (node.type.startsWith('action-')) {
-            await this.actionExecutor.execute(node, context);
+            this.logger.log(`Executing action node: ${node.type}`);
+            try {
+              await this.actionExecutor.execute(node, context);
+              this.logger.log(`Action ${node.type} executed successfully`);
+            } catch (error) {
+              this.logger.error(`Action ${node.type} failed: ${error.message}`, error.stack);
+            }
         } else if (node.type.startsWith('condition-')) {
             result = await this.conditionExecutor.execute(node, context);
+            this.logger.debug(`Condition ${node.type} result: ${result}`);
         }
       }
       
       // Find next nodes
       const outgoingConnections = workflow.connections.filter(c => c.sourceNodeId === node.id);
+      this.logger.debug(`Found ${outgoingConnections.length} outgoing connections from node ${node.id}`);
+      
+      if (outgoingConnections.length === 0) {
+        this.logger.debug(`No outgoing connections from node ${node.id}, checking all connections...`);
+        workflow.connections.forEach(c => {
+          this.logger.debug(`Connection: source=${c.sourceNodeId}, target=${c.targetNodeId}`);
+        });
+      }
       
       for (const conn of outgoingConnections) {
         // Handle condition handles (true/false)
         if (node.type.startsWith('condition-')) {
              if (conn.sourceHandle === 'true' && result === true) {
                  const nextNode = workflow.nodes.find(n => n.id === conn.targetNodeId);
-                 if (nextNode) queue.push({ node: nextNode, input: result });
+                 if (nextNode) {
+                   this.logger.debug(`Following true branch to ${nextNode.type}`);
+                   queue.push({ node: nextNode, input: result });
+                 }
              } else if (conn.sourceHandle === 'false' && result === false) {
                  const nextNode = workflow.nodes.find(n => n.id === conn.targetNodeId);
-                 if (nextNode) queue.push({ node: nextNode, input: result });
+                 if (nextNode) {
+                   this.logger.debug(`Following false branch to ${nextNode.type}`);
+                   queue.push({ node: nextNode, input: result });
+                 }
              }
         } else {
              const nextNode = workflow.nodes.find(n => n.id === conn.targetNodeId);
-             if (nextNode) queue.push({ node: nextNode, input: result });
+             if (nextNode) {
+               this.logger.debug(`Following connection to ${nextNode.type} (${nextNode.id})`);
+               queue.push({ node: nextNode, input: result });
+             }
         }
       }
     }
+    
+    this.logger.log(`Finished executeNodeChain`);
   }
 }
 

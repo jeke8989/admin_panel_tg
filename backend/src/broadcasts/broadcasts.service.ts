@@ -378,7 +378,6 @@ export class BroadcastsService {
     });
 
     // Обновляем статистику прочтения на основе Message.isRead и MessageRead
-    let readCount = 0;
     const updatedRecipients = await Promise.all(recipients.map(async (r) => {
       let isRead = false;
       let readAt: Date | null = null;
@@ -410,10 +409,6 @@ export class BroadcastsService {
         });
       }
 
-      if (isRead) {
-        readCount++;
-      }
-
       return {
         id: r.id,
         user: {
@@ -426,10 +421,13 @@ export class BroadcastsService {
         status: isRead ? BroadcastRecipientStatus.READ : r.status,
         sentAt: r.sentAt,
         deliveredAt: r.deliveredAt,
-        readAt: isRead ? (readAt || r.readAt) : r.readAt,
+        readAt: isRead ? (readAt ?? r.readAt) : r.readAt,
         errorMessage: r.errorMessage,
+        isRead,
       };
-    });
+    }));
+
+    const readCount = updatedRecipients.filter((r) => r.isRead).length;
 
     // Обновляем счетчики в рассылке
     if (readCount !== broadcast.readCount) {
@@ -450,7 +448,7 @@ export class BroadcastsService {
       read: readCount,
       failed: recipients.filter((r) => r.status === BroadcastRecipientStatus.FAILED).length,
       readPercentage,
-      recipients: updatedRecipients,
+      recipients: updatedRecipients.map(({ isRead, ...rest }) => rest),
     };
 
     return statistics;

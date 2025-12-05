@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Chat } from './Chat.entity';
 import { Message } from './Message.entity';
+import { BotWorkflow } from './BotWorkflow.entity';
 
 @Entity('bots')
 export class Bot {
@@ -33,6 +34,9 @@ export class Bot {
 
   @OneToMany(() => Message, (message) => message.bot)
   messages: Message[];
+
+  @OneToMany(() => BotWorkflow, (workflow) => workflow.bot)
+  workflows: BotWorkflow[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

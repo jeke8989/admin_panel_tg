@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WorkflowsService } from './workflows.service';
 import { WorkflowsController } from './workflows.controller';
+import { WorkflowsUniversalController } from './workflows-universal.controller';
 import { BotWorkflow } from '../entities/BotWorkflow.entity';
 import { WorkflowNode } from '../entities/WorkflowNode.entity';
 import { WorkflowConnection } from '../entities/WorkflowConnection.entity';
@@ -18,7 +19,7 @@ import { ConditionExecutor } from './node-executors/condition-executor';
     TypeOrmModule.forFeature([BotWorkflow, WorkflowNode, WorkflowConnection, Message, Chat]),
     forwardRef(() => TelegramModule),
   ],
-  controllers: [WorkflowsController],
+  controllers: [WorkflowsController, WorkflowsUniversalController],
   providers: [
     WorkflowsService,
     WorkflowExecutorService,

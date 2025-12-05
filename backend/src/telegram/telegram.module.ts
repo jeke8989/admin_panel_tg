@@ -7,11 +7,13 @@ import { Chat } from '../entities/Chat.entity';
 import { User } from '../entities/User.entity';
 import { Message } from '../entities/Message.entity';
 import { MessageRead } from '../entities/MessageRead.entity';
+import { BroadcastRecipient } from '../entities/BroadcastRecipient.entity';
+import { BotWorkflow } from '../entities/BotWorkflow.entity';
 import { WorkflowsModule } from '../workflows/workflows.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Bot, Chat, User, Message, MessageRead]),
+    TypeOrmModule.forFeature([Bot, Chat, User, Message, MessageRead, BroadcastRecipient, BotWorkflow]),
     forwardRef(() => WorkflowsModule),
   ],
   controllers: [TelegramController],

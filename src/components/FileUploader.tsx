@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
 interface FileUploaderProps {
-  botId: string;
+  botId?: string; // Теперь необязательный - файлы загружаются на сервер
   onFileSelect: (fileId: string, fileUrl?: string | null) => void;
   currentFileId?: string | null;
   currentPreviewUrl?: string | null;
@@ -10,7 +10,7 @@ interface FileUploaderProps {
 }
 
 export const FileUploader = ({ 
-  botId,
+  // botId не используется - файлы загружаются на сервер и работают для всех ботов
   onFileSelect, 
   currentFileId,
   currentPreviewUrl,
@@ -20,52 +20,60 @@ export const FileUploader = ({
   const [isDragging, setIsDragging] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [uploadedFileId, setUploadedFileId] = useState<string | null>(currentFileId || null);
+  const [uploadedFileUrl, setUploadedFileUrl] = useState<string | null>(currentFileId || null);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Проверяем, является ли файл изображением по расширению
+  const isImageFile = (url: string | null | undefined): boolean => {
+    if (!url) return false;
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'];
+    const lowerUrl = url.toLowerCase();
+    return imageExtensions.some(ext => lowerUrl.includes(ext));
+  };
 
   // Загружаем превью для уже сохраненного файла
   useEffect(() => {
-    let isMounted = true;
-
-    const loadPreview = async () => {
-      if (currentPreviewUrl) {
+    // Если есть currentPreviewUrl (полный URL)
+    if (currentPreviewUrl) {
+      if (isImageFile(currentPreviewUrl)) {
+        // Для изображений показываем превью
         setPreview(currentPreviewUrl);
-        setUploadedFileId(currentFileId || null);
-        return;
+      } else {
+        // Для документов не показываем превью изображения
+        setPreview(null);
       }
-
-      if (!currentFileId) return;
-
-      try {
-        const { getWorkflowFileUrl } = await import('../utils/api');
-        const url = await getWorkflowFileUrl(botId, currentFileId);
-        setUploadedFileId(currentFileId);
-        if (url) {
-          setPreview(url);
-        }
-      } catch (e) {
-        console.error('Error loading preview for existing file', e);
-        setUploadedFileId(currentFileId);
+      // Извлекаем путь из URL для uploadedFileUrl
+      const uploadsMatch = currentPreviewUrl.match(/\/uploads\/[^?#]+/);
+      if (uploadsMatch) {
+        setUploadedFileUrl(uploadsMatch[0]);
+      } else {
+        setUploadedFileUrl(currentFileId || currentPreviewUrl);
       }
-    };
-
-    if (isMounted) {
-      loadPreview();
-    }
-
-    return () => {
-      isMounted = false;
-    };
-  }, [botId, currentFileId, currentPreviewUrl]);
-
-  const handleFile = useCallback(async (file: File) => {
-    console.log('[FileUploader] Starting file upload:', { botId, fileName: file.name, fileSize: file.size });
-    
-    if (!botId) {
-      setError('Бот не выбран');
-      console.error('[FileUploader] Bot ID is missing');
       return;
     }
+
+    if (currentFileId) {
+      setUploadedFileUrl(currentFileId);
+      // Если currentFileId - это URL изображения, используем его как превью
+      if ((currentFileId.startsWith('/') || currentFileId.startsWith('http')) && isImageFile(currentFileId)) {
+        const fullUrl = currentFileId.startsWith('http') 
+          ? currentFileId 
+          : `${import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3000'}${currentFileId}`;
+        setPreview(fullUrl);
+      } else {
+        // Не изображение - не показываем превью
+        setPreview(null);
+      }
+    } else {
+      // Нет файла
+      setUploadedFileUrl(null);
+      setPreview(null);
+    }
+  }, [currentFileId, currentPreviewUrl]);
+
+  const handleFile = useCallback(async (file: File) => {
+    console.log('[FileUploader] Starting file upload:', { fileName: file.name, fileSize: file.size });
     
     if (file.size > maxSizeMB * 1024 * 1024) {
       const errorMsg = `Файл слишком большой. Максимальный размер: ${maxSizeMB} МБ`;
@@ -75,6 +83,7 @@ export const FileUploader = ({
     }
     
     setError(null);
+    setIsUploading(true);
 
     // Create preview for images
     if (file.type.startsWith('image/')) {
@@ -87,18 +96,23 @@ export const FileUploader = ({
       setPreview(null);
     }
 
-    // Upload file to Telegram
+    // Upload file to server (not Telegram) - works for all bots
     try {
-      console.log('[FileUploader] Calling uploadWorkflowFile API...');
-      const { uploadWorkflowFile } = await import('../utils/api');
-      const data = await uploadWorkflowFile(botId, file);
-      console.log('[FileUploader] Upload successful:', { fileId: data.fileId, fileType: data.fileType });
+      console.log('[FileUploader] Uploading file to server...');
+      const { uploadFileToServer } = await import('../utils/api');
+      const data = await uploadFileToServer(file);
+      console.log('[FileUploader] Upload successful:', { url: data.url, filename: data.filename });
       
-      setUploadedFileId(data.fileId);
-      if (data.fileUrl && file.type.startsWith('image/')) {
-        setPreview(data.fileUrl);
+      // Формируем полный URL для отображения
+      const baseUrl = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3000';
+      const fullUrl = `${baseUrl}${data.url}`;
+      
+      setUploadedFileUrl(data.url);
+      if (file.type.startsWith('image/')) {
+        setPreview(fullUrl);
       }
-      onFileSelect(data.fileId, data.fileUrl);
+      // Передаём URL файла (работает для всех ботов)
+      onFileSelect(data.url, fullUrl);
       setError(null);
     } catch (err) {
       console.error('[FileUploader] Upload error details:', err);
@@ -107,11 +121,13 @@ export const FileUploader = ({
         : (err as { response?: { data?: { message?: string }; status?: number } })?.response?.data?.message 
         || (err as { response?: { status?: number } })?.response?.status === 401
         ? 'Ошибка авторизации. Проверьте, что вы вошли в систему.'
-        : 'Ошибка при загрузке файла в Telegram';
+        : 'Ошибка при загрузке файла';
       setError(errorMessage);
       setPreview(null);
+    } finally {
+      setIsUploading(false);
     }
-  }, [onFileSelect, maxSizeMB, botId]);
+  }, [onFileSelect, maxSizeMB]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -142,7 +158,7 @@ export const FileUploader = ({
 
   const handleRemove = useCallback(() => {
     setPreview(null);
-    setUploadedFileId(null);
+    setUploadedFileUrl(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -158,7 +174,7 @@ export const FileUploader = ({
             ? 'border-blue-500 bg-blue-500/10' 
             : 'border-gray-600 hover:border-gray-500'
           }
-          ${preview || uploadedFileId ? 'bg-gray-700/50' : 'bg-gray-800'}
+          ${preview || uploadedFileUrl ? 'bg-gray-700/50' : 'bg-gray-800'}
         `}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -182,10 +198,14 @@ export const FileUploader = ({
               </svg>
             </button>
           </div>
-        ) : uploadedFileId ? (
+        ) : uploadedFileUrl ? (
           <div className="relative flex flex-col items-center justify-center h-32 text-gray-400 text-sm cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-            <span className="mb-1">Файл загружен в Telegram</span>
-            <span className="text-xs mb-2">ID: {uploadedFileId.substring(0, 20)}...</span>
+            {/* Иконка документа */}
+            <svg className="w-12 h-12 mb-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span className="mb-1 text-green-400">✓ Файл загружен</span>
+            <span className="text-xs text-gray-500">{uploadedFileUrl.split('/').pop()}</span>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -198,6 +218,14 @@ export const FileUploader = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
+          </div>
+        ) : isUploading ? (
+          <div className="flex flex-col items-center justify-center h-32 text-gray-400 text-sm">
+            <svg className="animate-spin w-8 h-8 mb-2" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span>Загрузка...</span>
           </div>
         ) : (
           <>
@@ -238,9 +266,9 @@ export const FileUploader = ({
         <p className="text-red-400 text-xs">{error}</p>
       )}
 
-      {uploadedFileId && !error && (
-        <p className="text-gray-400 text-xs">
-          Файл загружен в Telegram (ID: {uploadedFileId.substring(0, 20)}...). Нажмите на изображение, чтобы удалить.
+      {uploadedFileUrl && !error && (
+        <p className="text-green-400 text-xs">
+          ✓ Файл загружен и готов к использованию для всех ботов
         </p>
       )}
     </div>
