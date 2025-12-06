@@ -90,5 +90,57 @@ export class AuthService {
       },
     };
   }
+
+  async seed() {
+    const password = 'Abc12345';
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const seedData = [];
+
+    // Create admin user
+    const adminEmail = 'admin@test.com';
+    const existingAdmin = await this.adminRepository.findOne({
+      where: { email: adminEmail },
+    });
+
+    if (!existingAdmin) {
+      const admin = this.adminRepository.create({
+        email: adminEmail,
+        password: hashedPassword,
+        role: 'admin',
+      });
+      const savedAdmin = await this.adminRepository.save(admin);
+      seedData.push({ email: adminEmail, role: 'admin', id: savedAdmin.id });
+    } else {
+      seedData.push({ email: adminEmail, role: 'admin', id: existingAdmin.id, status: 'already exists' });
+    }
+
+    // Create 3 regular users
+    const userEmails = ['user1@test.com', 'user2@test.com', 'user3@test.com'];
+
+    for (const email of userEmails) {
+      const existing = await this.adminRepository.findOne({
+        where: { email },
+      });
+
+      if (!existing) {
+        const user = this.adminRepository.create({
+          email,
+          password: hashedPassword,
+          role: 'user',
+        });
+        const savedUser = await this.adminRepository.save(user);
+        seedData.push({ email, role: 'user', id: savedUser.id });
+      } else {
+        seedData.push({ email, role: 'user', id: existing.id, status: 'already exists' });
+      }
+    }
+
+    return {
+      message: 'Пользователи успешно добавлены/проверены',
+      data: seedData,
+      password: 'Abc12345',
+    };
+  }
 }
 
