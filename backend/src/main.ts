@@ -51,10 +51,7 @@ async function bootstrap() {
     ? frontendUrl.split(',').map(url => url.trim()) 
     : frontendUrl;
 
-  app.enableCors({
-    origin: origins,
-    credentials: true,
-  });
+  app.enableCors();
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
