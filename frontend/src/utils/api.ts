@@ -13,7 +13,7 @@ import type {
 } from "../types";
 
 const MODE = import.meta.env.VITE_APP_MODE || "dev";
-const API_BASE_URL = import.meta.env.VITE_API_URL_LIVE || "api.telegram-panel.xyz"
+const API_BASE_URL = import.meta.env.VITE_API_URL_LIVE + '/api'|| "api.telegram-panel.xyz/api"
 
 
     console.log(MODE, API_BASE_URL);
