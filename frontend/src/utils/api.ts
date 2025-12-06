@@ -13,11 +13,24 @@ import type {
 } from "../types";
 
 const MODE = import.meta.env.VITE_APP_MODE || "dev";
-const API_BASE_URL = "https://api.telegram-panel.xyz/api"
 
+// Prefer explicit Vite env var if provided, otherwise fall back to default.
+let API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.telegram-panel.xyz/api";
 
-    console.log(MODE, API_BASE_URL);
-    
+// Normalize: if the value doesn't include a scheme (http/https), treat it as host/path
+// and prepend the current page protocol to avoid building a relative URL like
+// ">https://telegram-panel.xyz/api.telegram-panel.xyz/...".
+if (API_BASE_URL && !/^https?:\/\//i.test(API_BASE_URL)) {
+  // In browser environment, `location` is available — use its protocol.
+  try {
+    API_BASE_URL = `${location.protocol}//${API_BASE_URL}`;
+  } catch (e) {
+    // Fallback to https if location is not available for some reason
+    API_BASE_URL = `https://${API_BASE_URL}`;
+  }
+}
+
+console.log(MODE, API_BASE_URL);
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
