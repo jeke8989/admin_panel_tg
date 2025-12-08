@@ -92,6 +92,7 @@ export class AuthService {
   }
 
   async seed() {
+    console.log('Seeding data...');
     const password = 'Abc12345';
     const hashedPassword = await bcrypt.hash(password, 10);
 
