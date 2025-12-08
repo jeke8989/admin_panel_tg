@@ -32,7 +32,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
     BotWorkflow, WorkflowNode, WorkflowConnection,
     Broadcast, BroadcastRecipient
   ],
-  synchronize: process.env.NODE_ENV === 'development', // В продакшене должно быть false
+  synchronize: true, // В продакшене должно быть false
   logging: process.env.NODE_ENV === 'development',
   migrations: ['dist/migrations/*.js'],
   migrationsRun: false,
