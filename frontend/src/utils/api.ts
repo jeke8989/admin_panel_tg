@@ -15,7 +15,7 @@ import type {
 const MODE = import.meta.env.VITE_APP_MODE || "dev";
 
 // Prefer explicit Vite env var if provided, otherwise fall back to default.
-let API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.telegram-panel.xyz/api";
+let API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://api.telegram-panel.xyz/api";
 
 // Normalize: if the value doesn't include a scheme (http/https), treat it as host/path
 // and prepend the current page protocol to avoid building a relative URL like
