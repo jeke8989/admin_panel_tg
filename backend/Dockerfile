@@ -21,10 +21,8 @@ COPY . .
 RUN npm run build
 
 # Устанавливаем postgresql-client для pg_isready и выполнения миграций
-RUN apk add --no-cache postgresql-client
-
-# Создаем директорию для загрузок
-RUN mkdir -p /app/uploads && chmod 755 /app/uploads
+# Устанавливаем su-exec для переключения пользователя
+RUN apk add --no-cache postgresql-client su-exec
 
 # Копируем entrypoint скрипт и миграции
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
@@ -35,11 +33,18 @@ RUN chmod +x /app/docker-entrypoint.sh
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nestjs -u 1001 -G nodejs
 
-# Меняем владельца директорий
+# Создаем директорию для загрузок ПОСЛЕ создания пользователя
+RUN mkdir -p /app/uploads && \
+    chown -R nestjs:nodejs /app/uploads && \
+    chmod 755 /app/uploads
+
+# Меняем владельца всех директорий
 RUN chown -R nestjs:nodejs /app
 
-# Переключаемся на непривилегированного пользователя
-USER nestjs
+# НЕ переключаемся на nestjs - entrypoint будет запускаться от root
+# чтобы иметь возможность изменять права на volume mount
+# Переключение на nestjs произойдет в entrypoint скрипте
+# USER nestjs
 
 # Открываем порт
 EXPOSE 3000
