@@ -1,5 +1,5 @@
 import type { Broadcast, BroadcastStatistics } from '../types';
-import { BroadcastStatistics as BroadcastStatisticsComponent } from './BroadcastStatistics';
+import { BroadcastStatisticsComponent } from './BroadcastStatistics';
 
 interface BroadcastDetailsProps {
   broadcast: Broadcast;

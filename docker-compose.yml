@@ -16,6 +16,10 @@ services:
       POSTGRES_INITDB_ARGS: "--encoding=UTF8"
     ports:
       - "5433:5432"
+    command: >
+      postgres
+      -c listen_addresses=*
+      -c max_connections=200
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # - ./admin_telegram_backup.sql:/docker-entrypoint-initdb.d/init.sql
@@ -57,7 +61,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-this-secret-key-in-production}
       PORT: 3000
       NODE_ENV: production
-      FRONTEND_URL: http://localhost:5173,http://localhost:8081,http://144.124.249.43:8081
+      FRONTEND_URL: http://localhost:5173,http://localhost:4000,http://144.124.249.43:4000
     ports:
       - "3000:3000"
     depends_on:
@@ -70,8 +74,8 @@ services:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/broadcasts/test"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 120s
     networks:
       - admin_network
     logging:
@@ -96,7 +100,7 @@ services:
     container_name: admin_telegram_frontend
     restart: always
     ports:
-      - "8081:80"
+      - "4000:80"
     depends_on:
       backend:
         condition: service_healthy
@@ -167,6 +171,3 @@ volumes:
 networks:
   admin_network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.28.0.0/16

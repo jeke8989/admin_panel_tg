@@ -5,11 +5,13 @@ import {
   UploadedFile,
   UseGuards,
   BadRequestException,
+  InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -23,10 +25,23 @@ export class UploadsController {
     FileInterceptor('file', {
       storage: diskStorage({
         destination: (req, file, cb) => {
-          // Используем абсолютный путь относительно корня проекта
-          const uploadsPath = join(process.cwd(), 'uploads');
-          console.log(`[UploadsController] Upload destination: ${uploadsPath}`);
-          cb(null, uploadsPath);
+          try {
+            // Используем абсолютный путь относительно корня проекта
+            const uploadsPath = join(process.cwd(), 'uploads');
+            console.log(`[UploadsController] Upload destination: ${uploadsPath}`);
+            
+            // Создаём папку, если её нет
+            if (!existsSync(uploadsPath)) {
+              mkdirSync(uploadsPath, { recursive: true });
+              console.log(`[UploadsController] Created uploads directory: ${uploadsPath}`);
+            }
+            
+            cb(null, uploadsPath);
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error(`[UploadsController] Error creating uploads directory: ${errorMessage}`);
+            cb(new Error(`Ошибка при создании директории для загрузки: ${errorMessage}`), null);
+          }
         },
         filename: (req, file, cb) => {
           const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
@@ -70,7 +85,7 @@ export class UploadsController {
       },
     }),
   )
-  uploadFile(@UploadedFile() file: Express.Multer.File) {
+  async uploadFile(@UploadedFile() file: Express.Multer.File) {
     this.logger.log(`Upload request received. File: ${file ? file.originalname : 'null'}`);
     
     if (!file) {
@@ -78,18 +93,35 @@ export class UploadsController {
       throw new BadRequestException('Файл не загружен');
     }
 
-    this.logger.log(`File uploaded successfully: ${file.filename}, size: ${file.size}, mimetype: ${file.mimetype}`);
+    try {
+      // Проверяем, что файл действительно сохранен
+      const uploadsPath = join(process.cwd(), 'uploads');
+      const filePath = join(uploadsPath, file.filename);
+      
+      if (!existsSync(filePath)) {
+        this.logger.error(`File was not saved: ${filePath}`);
+        throw new InternalServerErrorException('Ошибка при сохранении файла');
+      }
 
-    // Возвращаем URL файла относительно сервера
-    const fileUrl = `/uploads/${file.filename}`;
-    
-    return {
-      url: fileUrl,
-      filename: file.filename,
-      originalName: file.originalname,
-      mimetype: file.mimetype,
-      size: file.size,
-    };
+      this.logger.log(`File uploaded successfully: ${file.filename}, size: ${file.size}, mimetype: ${file.mimetype}, path: ${filePath}`);
+
+      // Возвращаем URL файла относительно сервера
+      const fileUrl = `/uploads/${file.filename}`;
+      
+      return {
+        url: fileUrl,
+        filename: file.filename,
+        originalName: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+      };
+    } catch (error) {
+      this.logger.error(`Error in uploadFile: ${error}`);
+      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Ошибка при обработке загруженного файла');
+    }
   }
 }
 

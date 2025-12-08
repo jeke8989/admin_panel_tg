@@ -90,5 +90,68 @@ export class AuthService {
       },
     };
   }
+
+  async seed() {
+    console.log('Seeding data...');
+
+    const seedData = [];
+    const passwords: Record<string, string> = {};
+
+    // Create admin user
+    const adminEmail = 'admin@test.com';
+    const adminPassword = 'Admin123!';
+    passwords[adminEmail] = adminPassword;
+    const hashedAdminPassword = await bcrypt.hash(adminPassword, 10);
+
+    const existingAdmin = await this.adminRepository.findOne({
+      where: { email: adminEmail },
+    });
+
+    if (!existingAdmin) {
+      const admin = this.adminRepository.create({
+        email: adminEmail,
+        password: hashedAdminPassword,
+        role: 'admin',
+      });
+      const savedAdmin = await this.adminRepository.save(admin);
+      seedData.push({ email: adminEmail, role: 'admin', id: savedAdmin.id, password: adminPassword });
+    } else {
+      seedData.push({ email: adminEmail, role: 'admin', id: existingAdmin.id, status: 'already exists', password: adminPassword });
+    }
+
+    // Create 3 regular users with unique passwords
+    const users = [
+      { email: 'user1@test.com', password: 'User1Pass123!aa' },
+      { email: 'user2@test.com', password: 'User2Pass123!bb' },
+      { email: 'user3@test.com', password: 'User3Pass123!cc' },
+    ];
+
+    for (const { email, password } of users) {
+      passwords[email] = password;
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      const existing = await this.adminRepository.findOne({
+        where: { email },
+      });
+
+      if (!existing) {
+        const user = this.adminRepository.create({
+          email,
+          password: hashedPassword,
+          role: 'user',
+        });
+        const savedUser = await this.adminRepository.save(user);
+        seedData.push({ email, role: 'user', id: savedUser.id, password });
+      } else {
+        seedData.push({ email, role: 'user', id: existing.id, status: 'already exists', password });
+      }
+    }
+
+    return {
+      message: 'Пользователи успешно добавлены/проверены',
+      data: seedData,
+      passwords,
+    };
+  }
 }
 

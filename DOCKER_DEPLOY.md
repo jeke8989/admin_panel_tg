@@ -36,7 +36,7 @@ docker-compose logs -f
 
 ### 3. Настройте nginx для проксирования (если нужно)
 
-Приложение будет доступно на порту 8081 (так как 8080 занят).
+Приложение будет доступно на порту 4000.
 
 Если нужно настроить nginx для проксирования на другой порт:
 
@@ -46,7 +46,7 @@ server {
     server_name 144.124.249.43;
 
     location / {
-        proxy_pass http://localhost:8081;
+        proxy_pass http://localhost:4000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -77,7 +77,7 @@ docker-compose ps
 
 ## Доступ к приложению
 
-- Frontend: http://144.124.249.43:8081
+- Frontend: http://144.124.249.43:4000
 - Backend API: http://144.124.249.43:3000
 
 ## Данные для входа

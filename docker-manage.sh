@@ -48,18 +48,17 @@ docker_compose() {
 # Сборка frontend
 build_frontend() {
     log_info "Сборка frontend..."
-    cd "$PROJECT_DIR"
+    cd "$PROJECT_DIR/frontend"
     npm run build
     
-    # Копируем сборку в frontend директорию
+    # Проверяем что сборка создана
     if [ -d "dist" ]; then
-        mkdir -p frontend/dist
-        cp -r dist/* frontend/dist/
-        log_success "Frontend собран и скопирован"
+        log_success "Frontend собран"
     else
         log_error "Директория dist не найдена!"
         exit 1
     fi
+    cd "$PROJECT_DIR"
 }
 
 # Запуск
@@ -234,7 +233,7 @@ health() {
     fi
     
     # Frontend
-    if curl -sf http://localhost:8081 &> /dev/null; then
+    if curl -sf http://localhost:4000 &> /dev/null; then
         log_success "Frontend: OK"
     else
         log_error "Frontend: FAIL"

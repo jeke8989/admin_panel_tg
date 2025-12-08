@@ -6,7 +6,7 @@ interface BroadcastStatisticsProps {
   statistics: BroadcastStatistics;
 }
 
-export const BroadcastStatistics = ({
+export const BroadcastStatisticsComponent = ({
   statistics,
 }: BroadcastStatisticsProps) => {
   const [statusFilter, setStatusFilter] = useState<string>('all');

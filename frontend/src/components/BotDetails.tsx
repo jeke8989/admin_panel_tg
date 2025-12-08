@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import type { Bot, BotStatistics } from '../types';
 import { BotStatisticsTab } from './BotStatisticsTab';
 
