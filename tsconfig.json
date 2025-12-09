@@ -1,0 +1,11 @@
+{
+  // Root TS config to help the IDE pick correct project configs
+  "files": [],
+  "references": [
+    { "path": "./frontend/tsconfig.json" },
+    { "path": "./backend/tsconfig.json" }
+  ]
+}
+
+
+

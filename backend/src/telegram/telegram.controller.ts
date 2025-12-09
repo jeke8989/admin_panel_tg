@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Delete,
+  Patch,
   Body,
   Param,
   UseGuards,
@@ -12,6 +13,7 @@ import {
 import { TelegramService } from './telegram.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateBotDto } from './dto/create-bot.dto';
+import { UpdateBotSettingsDto } from './dto/update-bot-settings.dto';
 
 @Controller('bots')
 @UseGuards(JwtAuthGuard)
@@ -42,6 +44,15 @@ export class TelegramController {
   @HttpCode(HttpStatus.OK)
   async toggleBotStatus(@Param('id') id: string) {
     return this.telegramService.toggleBotStatus(id);
+  }
+
+  @Patch(':id/settings')
+  @HttpCode(HttpStatus.OK)
+  async updateBotSettings(
+    @Param('id') id: string,
+    @Body() dto: UpdateBotSettingsDto,
+  ) {
+    return this.telegramService.updateBotSettings(id, dto);
   }
 
   @Delete(':id')

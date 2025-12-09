@@ -1,7 +1,6 @@
 {
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
-  ]
+  // Основной tsconfig для фронтенда, используется редактором и сборкой
+  "extends": "./tsconfig.app.json",
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
 }

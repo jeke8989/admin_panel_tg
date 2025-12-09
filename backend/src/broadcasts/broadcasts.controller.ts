@@ -29,9 +29,10 @@ export class BroadcastsController {
   @UsePipes(new SkipValidationPipe())
   @UseGuards(JwtAuthGuard)
   async createBroadcast(
-    @Body() body: Record<string, unknown>,
+    @Body() rawBody: Record<string, unknown> | undefined,
     @CurrentAdmin() admin: { id: string },
   ) {
+    const body = rawBody || {};
     console.log('[BroadcastsController] POST /broadcasts called');
     console.log('[BroadcastsController] Body:', JSON.stringify(body, null, 2));
     console.log('[BroadcastsController] Admin ID:', admin.id);
