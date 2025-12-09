@@ -455,6 +455,7 @@ export class ChatsService {
       fileName: file ? file.originalname : null,
       telegramMessageId: sentMessage.message_id,
       isFromAdmin: true,
+      isFromBot: false, // сообщения из админки видны
       isDelivered: true, // Сообщение доставлено если Telegram API вернул успех
       replyToMessageId: dto.replyToMessageId || null,
     });

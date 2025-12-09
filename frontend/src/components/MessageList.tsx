@@ -134,11 +134,14 @@ export const MessageList = ({ messages, chatId, scrollTrigger, onDeleteMessage, 
     });
   };
 
+  // Показываем только сообщения не от бота (бот-автоответы скрываем)
+  const visibleMessages = messages.filter((m) => !m.isFromBot);
+
   const groupedMessages: Array<{ date: Date | null; messages: Message[] }> = [];
   let currentDate: Date | null = null;
   let currentGroup: Message[] = [];
 
-  messages.forEach((message) => {
+  visibleMessages.forEach((message) => {
     const messageDate = new Date(
       message.timestamp.getFullYear(),
       message.timestamp.getMonth(),
@@ -183,7 +186,7 @@ export const MessageList = ({ messages, chatId, scrollTrigger, onDeleteMessage, 
           ))}
         </div>
       ))}
-      {messages.length === 0 && (
+      {visibleMessages.length === 0 && (
         <div className="flex items-center justify-center h-full text-gray-500">
           <p>Нет сообщений</p>
         </div>

@@ -132,6 +132,14 @@ export const toggleBotStatus = async (botId: string): Promise<Bot> => {
   return response.data;
 };
 
+export const updateBotSettings = async (
+  botId: string,
+  settings: { notificationGroupId?: string | null }
+): Promise<Bot> => {
+  const response = await api.patch(`/bots/${botId}/settings`, settings);
+  return response.data;
+};
+
 export const getBotStatistics = async (
   botId: string
 ): Promise<BotStatistics> => {
@@ -373,10 +381,14 @@ export const getWorkflowFileUrl = async (
 
 // Broadcasts API
 export const createBroadcast = async (
-  formData: FormData
+  payload: {
+    name: string;
+    text: string;
+    segments?: { startParams?: string[]; botIds?: string[] };
+    sendImmediately?: boolean;
+  }
 ): Promise<Broadcast> => {
-  // Axios автоматически установит правильный Content-Type для FormData
-  const response = await api.post("/broadcasts", formData);
+  const response = await api.post("/broadcasts", payload);
   return response.data;
 };
 

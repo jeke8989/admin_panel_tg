@@ -69,10 +69,6 @@ export const CreateBroadcastModal = ({
 
     setIsLoading(true);
     try {
-      const formData = new FormData();
-      formData.append('name', name);
-      formData.append('text', text);
-
       const segments: {
         startParams?: string[];
         botIds?: string[];
@@ -86,13 +82,12 @@ export const CreateBroadcastModal = ({
         }
       }
 
-      if (Object.keys(segments).length > 0) {
-        formData.append('segments', JSON.stringify(segments));
-      }
-
-      formData.append('sendImmediately', 'false');
-
-      await createBroadcast(formData);
+      await createBroadcast({
+        name,
+        text,
+        segments: Object.keys(segments).length > 0 ? segments : undefined,
+        sendImmediately: false,
+      });
 
       handleClose();
       onSuccess();

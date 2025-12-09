@@ -277,6 +277,9 @@ export class TelegramService implements OnModuleInit {
 
       this.logger.log(`Получено текстовое сообщение от ${user.firstName} в чате ${chat.id}`);
 
+      // Отправляем уведомление в группу, если настроено
+      await this.sendNotificationToGroup(botId, user, telegramMessage.text);
+
       // Execute Workflow
       const isCommand = telegramMessage.text.startsWith('/');
       if (isCommand) {
@@ -1030,9 +1033,19 @@ export class TelegramService implements OnModuleInit {
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.DocumentMessage> {
-    const bot = this.bots.get(botId);
+    let bot = this.bots.get(botId);
     if (!bot) {
-      throw new Error(`Бот с ID ${botId} не найден`);
+      // Попробуем переинициализировать бота из базы, как в uploadFileToTelegram
+      this.logger.warn(`[sendDocument] Bot ${botId} not found in map. Reinitializing...`);
+      const botEntity = await this.botRepository.findOne({ where: { id: botId, isActive: true } });
+      if (!botEntity) {
+        throw new Error(`Бот с ID ${botId} не найден`);
+      }
+      await this.createBot(botEntity.token, botEntity.id);
+      bot = this.bots.get(botId);
+      if (!bot) {
+        throw new Error(`Бот с ID ${botId} не найден после переинициализации`);
+      }
     }
 
     this.logger.log(`[DEBUG] Sending document with parse_mode: HTML`);
@@ -1520,6 +1533,22 @@ export class TelegramService implements OnModuleInit {
     }
   }
 
+  async updateBotSettings(botId: string, settings: { notificationGroupId?: string | null }) {
+    const bot = await this.botRepository.findOne({ where: { id: botId } });
+    if (!bot) {
+      throw new Error('Бот не найден');
+    }
+
+    if (settings.notificationGroupId !== undefined) {
+      bot.notificationGroupId = settings.notificationGroupId || null;
+    }
+
+    await this.botRepository.save(bot);
+    this.logger.log(`Настройки бота ${bot.username} (${botId}) обновлены`);
+
+    return bot;
+  }
+
   async toggleBotStatus(botId: string) {
     const bot = await this.botRepository.findOne({ where: { id: botId } });
     if (!bot) {
@@ -1653,6 +1682,37 @@ export class TelegramService implements OnModuleInit {
     } catch (error) {
       this.logger.error(`Ошибка при установке реакции для сообщения ${messageId}:`, error);
       return false;
+    }
+  }
+
+  /**
+   * Отправляет уведомление в группу при получении сообщения от пользователя
+   */
+  private async sendNotificationToGroup(botId: string, user: User, messageText: string) {
+    try {
+      const bot = await this.botRepository.findOne({ where: { id: botId } });
+      if (!bot || !bot.notificationGroupId) {
+        return; // Группа не настроена, пропускаем
+      }
+
+      const telegrafBot = this.bots.get(botId);
+      if (!telegrafBot) {
+        this.logger.warn(`Бот ${botId} не найден для отправки уведомления`);
+        return;
+      }
+
+      const groupId = bot.notificationGroupId;
+      const username = user.username ? `@${user.username}` : user.firstName;
+      const notificationText = `👤 <b>${username}</b>\n\n${messageText}`;
+
+      await telegrafBot.telegram.sendMessage(groupId, notificationText, {
+        parse_mode: 'HTML',
+      });
+
+      this.logger.log(`Уведомление отправлено в группу ${groupId} от пользователя ${username}`);
+    } catch (error) {
+      this.logger.error(`Ошибка при отправке уведомления в группу:`, error);
+      // Не прерываем выполнение, если уведомление не отправилось
     }
   }
 }
