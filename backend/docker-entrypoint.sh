@@ -31,11 +31,19 @@ done
 echo "Migrations completed"
 
 # Устанавливаем права на папку uploads ПОСЛЕ монтирования volume
+# На Windows права могут не применяться, но попробуем
 echo "Setting permissions on uploads directory..."
-chmod 777 /app/uploads 2>/dev/null || echo "Note: Could not set permissions (may be volume mount)"
+chmod -R 777 /app/uploads 2>/dev/null || echo "Note: Could not set permissions (may be volume mount on Windows)"
 
 # Пытаемся изменить владельца (может не работать для volume)
-chown nestjs:nodejs /app/uploads 2>/dev/null || echo "Note: Could not change owner (volume mount)"
+chown -R nestjs:nodejs /app/uploads 2>/dev/null || echo "Note: Could not change owner (volume mount)"
+
+# Убеждаемся, что папка существует и доступна для записи
+if [ ! -w /app/uploads ]; then
+  echo "WARNING: /app/uploads is not writable!"
+  # Пытаемся установить права еще раз
+  chmod 777 /app/uploads 2>/dev/null || true
+fi
 
 echo "Uploads directory ready"
 
