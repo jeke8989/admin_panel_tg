@@ -1,38 +1,18 @@
 import {
   IsString,
   IsOptional,
-  IsBoolean,
   IsArray,
   ValidateNested,
   IsDateString,
   ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { BroadcastSegmentsDto, InlineButtonDto } from './create-broadcast.dto';
 
-export class BroadcastSegmentsDto {
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  startParams?: string[];
-
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  botIds?: string[];
-}
-
-export class InlineButtonDto {
-  @IsString()
-  text: string;
-
+export class UpdateBroadcastDto {
   @IsString()
   @IsOptional()
-  callback_data?: string;
-}
-
-export class CreateBroadcastDto {
-  @IsString()
-  name: string;
+  name?: string;
 
   @IsString()
   @IsOptional()
@@ -57,10 +37,6 @@ export class CreateBroadcastDto {
   @ValidateIf((o) => o.inlineButtons !== undefined)
   @IsOptional()
   inlineButtons?: InlineButtonDto[][];
-
-  @IsBoolean()
-  @IsOptional()
-  sendImmediately?: boolean;
 
   @IsDateString()
   @IsOptional()

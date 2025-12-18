@@ -383,9 +383,13 @@ export const getWorkflowFileUrl = async (
 export const createBroadcast = async (
   payload: {
     name: string;
-    text: string;
+    text?: string;
+    fileId?: string;
+    fileUrl?: string;
     segments?: { startParams?: string[]; botIds?: string[] };
+    inlineButtons?: Array<Array<{ text: string; callback_data?: string }>>;
     sendImmediately?: boolean;
+    scheduledAt?: string;
   }
 ): Promise<Broadcast> => {
   const response = await api.post("/broadcasts", payload);
@@ -420,6 +424,54 @@ export const copyBroadcast = async (id: string): Promise<Broadcast> => {
 
 export const deleteBroadcast = async (id: string): Promise<void> => {
   await api.delete(`/broadcasts/${id}`);
+};
+
+export const updateBroadcast = async (
+  id: string,
+  payload: {
+    name?: string;
+    text?: string;
+    fileId?: string;
+    fileUrl?: string;
+    segments?: { startParams?: string[]; botIds?: string[] };
+    inlineButtons?: Array<Array<{ text: string; callback_data?: string }>>;
+    scheduledAt?: string | null;
+  }
+): Promise<Broadcast> => {
+  const response = await api.patch(`/broadcasts/${id}`, payload);
+  return response.data;
+};
+
+export const getSegmentationCounts = async (segments?: {
+  startParams?: string[];
+  botIds?: string[];
+}): Promise<{
+  total: number;
+  byStartParam: Record<string, number>;
+  byBotId: Record<string, number>;
+  selectedTotal: number;
+}> => {
+  const response = await api.post('/broadcasts/segmentation-counts', {
+    segments,
+  });
+  return response.data;
+};
+
+export const testBroadcast = async (
+  text: string,
+  botId?: string,
+  fileId?: string,
+  fileUrl?: string,
+  inlineButtons?: Array<Array<{ text: string; callback_data?: string }>>
+): Promise<{ success: boolean; message: string }> => {
+  const response = await api.post('/broadcasts/test', {
+    text,
+    botId,
+    fileId,
+    fileUrl,
+    inlineButtons,
+  });
+  return response.data;
 };
 
 // Upload file to server (for universal workflows)

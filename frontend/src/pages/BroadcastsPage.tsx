@@ -11,6 +11,7 @@ interface BroadcastsPageProps {
   onBroadcastSelect?: (id: string) => void;
   onBroadcastDeleted?: (id: string) => void;
   onBroadcastCopied?: (id: string) => void; // eslint-disable-line @typescript-eslint/no-unused-vars
+  refreshTrigger?: number; // Триггер для принудительного обновления
 }
 
 export const BroadcastsPage = ({ 
@@ -18,6 +19,7 @@ export const BroadcastsPage = ({
   onBroadcastSelect,
   onBroadcastDeleted,
   onBroadcastCopied: _onBroadcastCopied,
+  refreshTrigger,
 }: BroadcastsPageProps = {}) => {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,33 +36,68 @@ export const BroadcastsPage = ({
   const { showToast } = useToast();
 
   useEffect(() => {
-    loadBroadcasts();
+    loadBroadcasts(true);
+    
+    // Периодическое обновление списка рассылок каждые 5 секунд
+    const interval = setInterval(() => {
+      loadBroadcasts(false);
+    }, 5000);
+    
+    return () => clearInterval(interval);
   }, []);
+
+  // Обновление при изменении refreshTrigger
+  useEffect(() => {
+    if (refreshTrigger !== undefined) {
+      loadBroadcasts(false);
+    }
+  }, [refreshTrigger]);
 
   useEffect(() => {
     if (selectedBroadcastId) {
       loadBroadcastDetails(selectedBroadcastId);
+      
+      // Периодическое обновление деталей выбранной рассылки каждые 3 секунды
+      const interval = setInterval(() => {
+        loadBroadcastDetails(selectedBroadcastId);
+      }, 3000);
+      
+      return () => clearInterval(interval);
     }
   }, [selectedBroadcastId]);
 
-  const loadBroadcasts = async () => {
+  const loadBroadcasts = async (isInitial = false) => {
     try {
-      setIsLoading(true);
+      // Показываем индикатор загрузки только при первой загрузке
+      if (isInitial) {
+        setIsLoading(true);
+      }
+      
       const broadcastsList = await getBroadcasts();
-      setBroadcasts(broadcastsList);
+      
+      // Сравниваем данные перед обновлением, чтобы избежать мерцания
+      const hasChanges = JSON.stringify(broadcasts) !== JSON.stringify(broadcastsList);
+      
+      if (hasChanges) {
+        setBroadcasts(broadcastsList);
 
-      // Если ничего не выбрано — автоматически выбираем первую рассылку
-      if (!selectedBroadcastId && broadcastsList.length > 0) {
-        const firstId = broadcastsList[0].id;
-        setSelectedBroadcastId(firstId);
-        onBroadcastSelect?.(firstId);
-        await loadBroadcastDetails(firstId);
+        // Если ничего не выбрано — автоматически выбираем первую рассылку
+        if (!selectedBroadcastId && broadcastsList.length > 0 && isInitial) {
+          const firstId = broadcastsList[0].id;
+          setSelectedBroadcastId(firstId);
+          onBroadcastSelect?.(firstId);
+          await loadBroadcastDetails(firstId);
+        }
       }
     } catch (error) {
       console.error('Error loading broadcasts:', error);
-      showToast('Ошибка при загрузке рассылок', 'error');
+      if (isInitial) {
+        showToast('Ошибка при загрузке рассылок', 'error');
+      }
     } finally {
-      setIsLoading(false);
+      if (isInitial) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -88,7 +125,8 @@ export const BroadcastsPage = ({
     setIsDeleting(true);
     try {
       await deleteBroadcast(broadcastToDelete.id);
-      await loadBroadcasts();
+      // Оптимистично удаляем из списка
+      setBroadcasts(prev => prev.filter(b => b.id !== broadcastToDelete.id));
       if (selectedBroadcastId === broadcastToDelete.id) {
         setSelectedBroadcastId(null);
         setSelectedBroadcast(null);
@@ -96,12 +134,16 @@ export const BroadcastsPage = ({
       }
       onBroadcastDeleted?.(broadcastToDelete.id);
       showToast('Рассылка удалена', 'success');
+      // Обновляем список в фоне без показа загрузки
+      loadBroadcasts(false);
     } catch (error) {
       console.error('Error deleting broadcast:', error);
       const errorMessage = error && typeof error === 'object' && 'response' in error
         ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
         : 'Ошибка при удалении рассылки';
       showToast(errorMessage || 'Ошибка при удалении рассылки', 'error');
+      // В случае ошибки обновляем список
+      loadBroadcasts(false);
     } finally {
       setIsDeleting(false);
       setBroadcastToDelete(null);
@@ -110,7 +152,7 @@ export const BroadcastsPage = ({
 
 
   const handleCreateBroadcast = async () => {
-    await loadBroadcasts();
+    await loadBroadcasts(false);
     setIsCreateModalOpen(false);
   };
 

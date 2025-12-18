@@ -5,6 +5,7 @@ import { ValidationPipe, BadRequestException } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { BroadcastsService } from './broadcasts/broadcasts.service';
 
 config();
 
@@ -56,6 +57,19 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
   await app.listen(port);
   console.log(`Application is running on: http://localhost:${port}`);
+
+  // Запускаем периодическую проверку запланированных рассылок
+  const broadcastsService = app.get(BroadcastsService);
+  // Проверяем каждую минуту
+  setInterval(async () => {
+    try {
+      await broadcastsService.processScheduledBroadcasts();
+    } catch (error) {
+      console.error('Ошибка при обработке запланированных рассылок:', error);
+    }
+  }, 60000); // 60 секунд = 1 минута
+
+  console.log('Scheduler для запланированных рассылок запущен (проверка каждую минуту)');
 }
 
 bootstrap();

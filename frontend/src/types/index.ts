@@ -196,6 +196,11 @@ export interface BroadcastSegments {
   lastInteractionBefore?: string;
 }
 
+export interface InlineButton {
+  text: string;
+  callback_data?: string;
+}
+
 export interface Broadcast {
   id: string;
   name: string;
@@ -204,6 +209,7 @@ export interface Broadcast {
   fileId: string | null;
   fileUrl: string | null;
   caption: string | null;
+  inlineButtons?: InlineButton[][];
   segments: BroadcastSegments | null;
   status: BroadcastStatus;
   createdById: string;
