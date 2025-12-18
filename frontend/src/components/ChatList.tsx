@@ -22,7 +22,7 @@ interface ChatListProps {
 
 export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSearchChange, selectedTagFilter, onTagFilterChange, unreadCounts }: ChatListProps) => {
   return (
-    <div className="flex flex-col h-full bg-gray-800">
+    <div className="flex flex-col h-full bg-gray-800 overflow-hidden">
       <div className="flex items-center gap-3 p-4 border-b border-gray-700 bg-gray-800">
         <div className="flex-1 relative">
           <input
@@ -64,11 +64,11 @@ export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSea
         )}
       </div>
       {/* Табы фильтрации по тегам внизу */}
-      <div className="border-t border-gray-700 bg-gray-800 flex-shrink-0">
-        <div className="flex">
+      <div className="border-t border-gray-700 bg-gray-800 flex-shrink-0 sticky bottom-0 z-10">
+        <div className="flex h-12">
           <button
             onClick={() => onTagFilterChange('none')}
-            className={`flex-1 px-2 py-3 text-xs font-medium transition-colors relative ${
+            className={`flex-1 px-3 text-sm font-medium transition-colors relative flex items-center justify-center whitespace-nowrap ${
               selectedTagFilter === 'none'
                 ? 'text-white border-t-2 border-blue-500 bg-gray-800'
                 : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -83,7 +83,7 @@ export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSea
           </button>
           <button
             onClick={() => onTagFilterChange('hot')}
-            className={`flex-1 px-2 py-3 text-xs font-medium transition-colors relative ${
+            className={`flex-1 px-3 text-sm font-medium transition-colors relative flex items-center justify-center whitespace-nowrap ${
               selectedTagFilter === 'hot'
                 ? 'text-white border-t-2 border-red-500 bg-gray-800'
                 : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -98,7 +98,7 @@ export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSea
           </button>
           <button
             onClick={() => onTagFilterChange('warm')}
-            className={`flex-1 px-2 py-3 text-xs font-medium transition-colors relative ${
+            className={`flex-1 px-3 text-sm font-medium transition-colors relative flex items-center justify-center whitespace-nowrap ${
               selectedTagFilter === 'warm'
                 ? 'text-white border-t-2 border-yellow-500 bg-gray-800'
                 : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -113,7 +113,7 @@ export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSea
           </button>
           <button
             onClick={() => onTagFilterChange('cold')}
-            className={`flex-1 px-2 py-3 text-xs font-medium transition-colors relative ${
+            className={`flex-1 px-3 text-sm font-medium transition-colors relative flex items-center justify-center whitespace-nowrap ${
               selectedTagFilter === 'cold'
                 ? 'text-white border-t-2 border-blue-500 bg-gray-800'
                 : 'text-gray-400 hover:text-white hover:bg-gray-700'

@@ -61,6 +61,9 @@ export class Message {
   @Column({ type: 'boolean', default: false, name: 'is_from_admin' })
   isFromAdmin: boolean;
 
+  @Column({ type: 'boolean', default: false, name: 'is_from_bot' })
+  isFromBot: boolean;
+
   @Column({ type: 'boolean', default: false, name: 'is_delivered' })
   isDelivered: boolean;
 

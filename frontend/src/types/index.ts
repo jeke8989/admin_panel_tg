@@ -71,6 +71,7 @@ export interface Message {
   fileName?: string | null;
   caption?: string | null;
   isFromAdmin?: boolean;
+  isFromBot?: boolean;
   reactions?: MessageReaction[];
   replyToMessageId?: string | null;
   replyToMessage?: Message | null;
@@ -86,6 +87,7 @@ export interface Bot {
   username: string | null;
   firstName: string | null;
   isActive: boolean;
+  notificationGroupId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -194,6 +196,11 @@ export interface BroadcastSegments {
   lastInteractionBefore?: string;
 }
 
+export interface InlineButton {
+  text: string;
+  callback_data?: string;
+}
+
 export interface Broadcast {
   id: string;
   name: string;
@@ -202,6 +209,7 @@ export interface Broadcast {
   fileId: string | null;
   fileUrl: string | null;
   caption: string | null;
+  inlineButtons?: InlineButton[][];
   segments: BroadcastSegments | null;
   status: BroadcastStatus;
   createdById: string;

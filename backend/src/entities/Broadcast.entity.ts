@@ -49,6 +49,9 @@ export class Broadcast {
   @Column({ type: 'text', nullable: true })
   caption: string | null;
 
+  @Column({ type: 'jsonb', nullable: true, name: 'inline_buttons' })
+  inlineButtons: Array<Array<{ text: string; callback_data?: string }>> | null;
+
   @Column({ type: 'jsonb', nullable: true })
   segments: {
     startParams?: string[];
@@ -103,4 +106,7 @@ export class Broadcast {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 }
+
+
+
 

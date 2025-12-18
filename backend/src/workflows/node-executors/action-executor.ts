@@ -303,7 +303,8 @@ export class ActionExecutor extends NodeExecutor {
                       fileId,
                       fileUrl,
                       telegramMessageId,
-                      isFromAdmin: true, // Сообщения от workflow считаются от админа
+                    isFromAdmin: true, // Сообщения от workflow считаются от админа
+                    isFromBot: true,   // Отмечаем как сообщение бота, чтобы скрывать в UI
                       isDelivered: true,
                     });
 

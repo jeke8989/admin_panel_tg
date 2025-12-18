@@ -29,6 +29,9 @@ export class Bot {
   @Column({ type: 'boolean', default: true, name: 'is_active' })
   isActive: boolean;
 
+  @Column({ type: 'varchar', length: 255, nullable: true, name: 'notification_group_id' })
+  notificationGroupId: string | null;
+
   @OneToMany(() => Chat, (chat) => chat.bot)
   chats: Chat[];
 

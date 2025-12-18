@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import type { Bot, BotStatistics } from '../types';
 import { BotStatisticsTab } from './BotStatisticsTab';
+import { BotSettingsTab } from './BotSettingsTab';
 
 interface BotDetailsProps {
   bot: Bot | null;
@@ -9,6 +11,7 @@ interface BotDetailsProps {
 }
 
 export const BotDetails = ({ bot, statistics, onDeleteBot, onToggleStatus }: BotDetailsProps) => {
+  const [activeTab, setActiveTab] = useState<'statistics' | 'settings'>('statistics');
   
   if (!bot) {
     return (
@@ -46,14 +49,42 @@ export const BotDetails = ({ bot, statistics, onDeleteBot, onToggleStatus }: Bot
         </span>
       </div>
 
+      {/* Tabs */}
+      <div className="flex border-b border-gray-700 bg-gray-800">
+        <button
+          onClick={() => setActiveTab('statistics')}
+          className={`px-6 py-3 text-sm font-medium transition-colors ${
+            activeTab === 'statistics'
+              ? 'text-blue-400 border-b-2 border-blue-400'
+              : 'text-gray-400 hover:text-gray-300'
+          }`}
+        >
+          Статистика
+        </button>
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={`px-6 py-3 text-sm font-medium transition-colors ${
+            activeTab === 'settings'
+              ? 'text-blue-400 border-b-2 border-blue-400'
+              : 'text-gray-400 hover:text-gray-300'
+          }`}
+        >
+          Настройки
+        </button>
+      </div>
+
       {/* Content */}
       <div className="flex-1 p-6 overflow-y-auto">
+        {activeTab === 'statistics' ? (
           <BotStatisticsTab 
             bot={bot} 
             statistics={statistics} 
             onToggleStatus={onToggleStatus} 
             onDeleteBot={onDeleteBot} 
           />
+        ) : (
+          <BotSettingsTab bot={bot} />
+        )}
       </div>
     </div>
   );
