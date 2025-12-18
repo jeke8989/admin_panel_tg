@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -14,6 +15,7 @@ import { BroadcastsService } from './broadcasts.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentAdmin } from '../auth/decorators/current-admin.decorator';
 import { CreateBroadcastDto } from './dto/create-broadcast.dto';
+import { UpdateBroadcastDto } from './dto/update-broadcast.dto';
 import { SkipValidationPipe } from '../common/pipes/skip-validation.pipe';
 
 @Controller('broadcasts')
@@ -50,11 +52,28 @@ export class BroadcastsController {
       }
     }
 
+    // Парсим inlineButtons из JSON строки если есть
+    let inlineButtons = null;
+    if (body.inlineButtons) {
+      try {
+        inlineButtons = typeof body.inlineButtons === 'string' 
+          ? JSON.parse(body.inlineButtons) 
+          : body.inlineButtons;
+      } catch (e) {
+        console.error('[BroadcastsController] Error parsing inlineButtons:', e);
+        inlineButtons = body.inlineButtons;
+      }
+    }
+
     const dto: CreateBroadcastDto = {
       name: (body.name as string) || '',
-      text: (body.text as string) || '',
+      text: (body.text as string) || undefined,
+      fileId: (body.fileId as string) || undefined,
+      fileUrl: (body.fileUrl as string) || undefined,
       segments: segments || undefined,
+      inlineButtons: inlineButtons || undefined,
       sendImmediately: body.sendImmediately === 'true' || body.sendImmediately === true,
+      scheduledAt: body.scheduledAt as string | undefined,
     };
 
     console.log('[BroadcastsController] DTO:', JSON.stringify(dto, null, 2));
@@ -87,6 +106,98 @@ export class BroadcastsController {
   async getBroadcastRecipients(@Param('id') id: string) {
     const broadcast = await this.broadcastsService.getBroadcastById(id);
     return broadcast.recipients;
+  }
+
+  @Post('segmentation-counts')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async getSegmentationCounts(
+    @Body() body: { segments?: { startParams?: string[]; botIds?: string[] } },
+  ) {
+    return this.broadcastsService.getSegmentationCounts(body.segments);
+  }
+
+  @Post('test')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async testBroadcast(
+    @Body() body: { 
+      text: string; 
+      botId?: string; 
+      fileId?: string; 
+      fileUrl?: string;
+      inlineButtons?: Array<Array<{ text: string; callback_data?: string }>>;
+    },
+  ) {
+    // Парсим inlineButtons из JSON строки если есть
+    let inlineButtons = null;
+    if (body.inlineButtons) {
+      try {
+        inlineButtons = typeof body.inlineButtons === 'string' 
+          ? JSON.parse(body.inlineButtons) 
+          : body.inlineButtons;
+      } catch (e) {
+        console.error('[BroadcastsController] Error parsing inlineButtons in test:', e);
+        inlineButtons = body.inlineButtons;
+      }
+    }
+
+    return this.broadcastsService.testBroadcast(
+      body.text, 
+      body.botId, 
+      body.fileId, 
+      body.fileUrl,
+      inlineButtons || undefined,
+    );
+  }
+
+  @Patch(':id')
+  @UsePipes(new SkipValidationPipe())
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async updateBroadcast(
+    @Param('id') id: string,
+    @Body() rawBody: Record<string, unknown> | undefined,
+  ) {
+    const body = rawBody || {};
+
+    // Парсим segments из JSON строки если есть
+    let segments = null;
+    if (body.segments) {
+      try {
+        segments = typeof body.segments === 'string' 
+          ? JSON.parse(body.segments) 
+          : body.segments;
+      } catch (e) {
+        console.error('[BroadcastsController] Error parsing segments:', e);
+        segments = body.segments;
+      }
+    }
+
+    // Парсим inlineButtons из JSON строки если есть
+    let inlineButtons = null;
+    if (body.inlineButtons) {
+      try {
+        inlineButtons = typeof body.inlineButtons === 'string' 
+          ? JSON.parse(body.inlineButtons) 
+          : body.inlineButtons;
+      } catch (e) {
+        console.error('[BroadcastsController] Error parsing inlineButtons:', e);
+        inlineButtons = body.inlineButtons;
+      }
+    }
+
+    const dto: UpdateBroadcastDto = {
+      name: body.name as string | undefined,
+      text: body.text as string | undefined,
+      fileId: body.fileId as string | undefined,
+      fileUrl: body.fileUrl as string | undefined,
+      segments: segments || undefined,
+      inlineButtons: inlineButtons || undefined,
+      scheduledAt: body.scheduledAt as string | undefined,
+    };
+
+    return this.broadcastsService.updateBroadcast(id, dto);
   }
 
   @Post(':id/send')

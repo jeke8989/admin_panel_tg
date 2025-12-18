@@ -17,6 +17,25 @@ import { TelegramService } from '../telegram/telegram.service';
 export class ChatsService {
   private readonly logger = new Logger(ChatsService.name);
 
+  /**
+   * Возвращает чат только если бот активен.
+   * Используем NotFound, чтобы скрыть чаты отключенных ботов.
+   */
+  private async getActiveChatOrThrow(chatId: string, relations: string[] = []) {
+    const uniqueRelations = Array.from(new Set([...relations, 'bot']));
+    const chat = await this.chatRepository.findOne({
+      where: { id: chatId },
+      relations: uniqueRelations,
+    });
+
+    // Скрываем чаты отключенных ботов
+    if (!chat || !chat.bot || chat.bot.isActive !== true) {
+      throw new NotFoundException('Чат не найден');
+    }
+
+    return chat;
+  }
+
   constructor(
     @InjectRepository(Chat)
     private chatRepository: Repository<Chat>,
@@ -38,15 +57,16 @@ export class ChatsService {
     this.logger.log(`[DEBUG_CHATS] findAll called with tagId: ${tagId}`);
     const queryBuilder = this.chatRepository
       .createQueryBuilder('chat')
+      .innerJoinAndSelect('chat.bot', 'bot')
       .leftJoinAndSelect('chat.user', 'user')
       .addSelect('user.startParam')
-      .leftJoinAndSelect('chat.bot', 'bot')
       .leftJoinAndSelect('chat.lastMessage', 'lastMessage')
       .leftJoinAndSelect('lastMessage.sender', 'sender')
-      .leftJoinAndSelect('chat.tags', 'tags');
+      .leftJoinAndSelect('chat.tags', 'tags')
+      .where('bot.isActive = :isActive', { isActive: true });
 
     if (tagId) {
-      queryBuilder.where('tags.id = :tagId', { tagId });
+      queryBuilder.andWhere('tags.id = :tagId', { tagId });
     }
 
     const chats = await queryBuilder
@@ -88,13 +108,7 @@ export class ChatsService {
   }
 
   async findMessagesByChatId(chatId: string, dto: GetMessagesDto) {
-    const chat = await this.chatRepository.findOne({
-      where: { id: chatId },
-    });
-
-    if (!chat) {
-      throw new NotFoundException('Чат не найден');
-    }
+    await this.getActiveChatOrThrow(chatId);
 
     const page = dto.page || 1;
     const limit = dto.limit || 50;
@@ -123,13 +137,7 @@ export class ChatsService {
 
   // Пометить все сообщения чата как прочитанные (для всех админов)
   async markChatAsRead(chatId: string) {
-    const chat = await this.chatRepository.findOne({
-      where: { id: chatId },
-    });
-
-    if (!chat) {
-      throw new NotFoundException('Чат не найден');
-    }
+    await this.getActiveChatOrThrow(chatId);
 
     // Помечаем все непрочитанные сообщения от пользователя как прочитанные
     await this.messageRepository.update(
@@ -154,14 +162,7 @@ export class ChatsService {
   ) {
     console.log(`[ChatsService] createMessage called. Text: "${dto.text}", MessageType: "${dto.messageType}", File: ${!!file}`);
     
-    const chat = await this.chatRepository.findOne({
-      where: { id: chatId },
-      relations: ['bot', 'user'],
-    });
-
-    if (!chat) {
-      throw new NotFoundException('Чат не найден');
-    }
+    const chat = await this.getActiveChatOrThrow(chatId, ['user']);
 
     // Добавляем префикс "Оператор Legal NDS" к сообщениям от админа
     const operatorPrefix = '<b>Оператор Legal NDS</b>\n\n';
@@ -478,14 +479,7 @@ export class ChatsService {
     console.log(`Попытка удалить чат: ${chatId}`);
     
     try {
-      const chat = await this.chatRepository.findOne({
-        where: { id: chatId },
-      });
-
-      if (!chat) {
-        console.error(`Чат не найден: ${chatId}`);
-        throw new NotFoundException('Чат не найден');
-      }
+      await this.getActiveChatOrThrow(chatId);
 
       console.log(`Чат найден, начинаем удаление: ${chatId}`);
 
@@ -640,14 +634,7 @@ export class ChatsService {
 
   async clearChatHistory(chatId: string): Promise<{ message: string; deletedMessages: number }> {
     // Находим чат
-    const chat = await this.chatRepository.findOne({
-      where: { id: chatId },
-      relations: ['bot'],
-    });
-
-    if (!chat) {
-      throw new Error('Чат не найден');
-    }
+    const chat = await this.getActiveChatOrThrow(chatId);
 
     // Получаем все сообщения чата
     const messages = await this.messageRepository.find({
@@ -824,14 +811,7 @@ export class ChatsService {
   }
 
   async addTagToChat(chatId: string, tagId: string) {
-    const chat = await this.chatRepository.findOne({
-      where: { id: chatId },
-      relations: ['tags'],
-    });
-
-    if (!chat) {
-      throw new NotFoundException('Чат не найден');
-    }
+    const chat = await this.getActiveChatOrThrow(chatId, ['tags']);
 
     const tag = await this.tagRepository.findOne({
       where: { id: tagId },
@@ -854,14 +834,7 @@ export class ChatsService {
   }
 
   async removeTagFromChat(chatId: string, tagId: string) {
-    const chat = await this.chatRepository.findOne({
-      where: { id: chatId },
-      relations: ['tags'],
-    });
-
-    if (!chat) {
-      throw new NotFoundException('Чат не найден');
-    }
+    const chat = await this.getActiveChatOrThrow(chatId, ['tags']);
 
     chat.tags = chat.tags.filter((tag) => tag.id !== tagId);
     await this.chatRepository.save(chat);

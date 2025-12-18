@@ -19,6 +19,8 @@ export const BroadcastItem = ({ broadcast, isActive, onClick }: BroadcastItemPro
     switch (status) {
       case 'draft':
         return 'bg-gray-500/20 text-gray-400';
+      case 'scheduled':
+        return 'bg-yellow-500/20 text-yellow-400';
       case 'sending':
         return 'bg-blue-500/20 text-blue-400';
       case 'completed':
@@ -34,6 +36,8 @@ export const BroadcastItem = ({ broadcast, isActive, onClick }: BroadcastItemPro
     switch (status) {
       case 'draft':
         return 'Черновик';
+      case 'scheduled':
+        return 'Запланирована';
       case 'sending':
         return 'Отправка';
       case 'completed':
@@ -88,6 +92,17 @@ export const BroadcastItem = ({ broadcast, isActive, onClick }: BroadcastItemPro
         </div>
         <div className="text-gray-500 text-xs mt-1">
           Создан: {formatDate(broadcast.createdAt)}
+          {broadcast.status === 'scheduled' && broadcast.scheduledAt && (
+            <span className="text-yellow-400 ml-2">
+              • Запланировано: {new Date(broadcast.scheduledAt).toLocaleDateString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+              })} {new Date(broadcast.scheduledAt).toLocaleTimeString('ru-RU', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </span>
+          )}
           {broadcast.status === 'completed' && ` • Отправлено: ${broadcast.sentCount}`}
         </div>
       </div>

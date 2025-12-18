@@ -1,13 +1,16 @@
-import type { Broadcast, BroadcastStatistics } from '../types';
+import { useState, useEffect } from 'react';
+import type { Broadcast, BroadcastStatistics, Bot } from '../types';
 import { BroadcastStatisticsComponent } from './BroadcastStatistics';
+import { getBots } from '../utils/api';
 
 interface BroadcastDetailsProps {
   broadcast: Broadcast;
   statistics: BroadcastStatistics | null;
   onSend: () => void;
   onDelete: () => void;
-  onRefresh: () => void;
+  onRefresh?: () => void; // Опциональный, так как кнопка удалена
   onCopy?: () => void;
+  onEdit?: () => void;
 }
 
 export const BroadcastDetails = ({
@@ -15,14 +18,30 @@ export const BroadcastDetails = ({
   statistics,
   onSend,
   onDelete,
-  onRefresh,
   onCopy,
+  onEdit,
 }: BroadcastDetailsProps) => {
+  const [bots, setBots] = useState<Bot[]>([]);
+
+  useEffect(() => {
+    loadBots();
+  }, []);
+
+  const loadBots = async () => {
+    try {
+      const botsList = await getBots();
+      setBots(botsList);
+    } catch (error) {
+      console.error('Error loading bots:', error);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'draft':
         return 'bg-gray-500/20 text-gray-400';
+      case 'scheduled':
+        return 'bg-yellow-500/20 text-yellow-400';
       case 'sending':
         return 'bg-blue-500/20 text-blue-400';
       case 'completed':
@@ -38,6 +57,8 @@ export const BroadcastDetails = ({
     switch (status) {
       case 'draft':
         return 'Черновик';
+      case 'scheduled':
+        return 'Запланирована';
       case 'sending':
         return 'Отправка';
       case 'completed':
@@ -76,9 +97,28 @@ export const BroadcastDetails = ({
                   minute: '2-digit',
                 })}
               </span>
+              {broadcast.status === 'scheduled' && broadcast.scheduledAt && (
+                <span className="text-yellow-400 text-xs">
+                  • Запланировано: {new Date(broadcast.scheduledAt).toLocaleDateString('ru-RU', {
+                    day: '2-digit',
+                    month: '2-digit',
+                  })} {new Date(broadcast.scheduledAt).toLocaleTimeString('ru-RU', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+              )}
             </div>
           </div>
           <div className="flex gap-1.5 flex-shrink-0">
+            {(broadcast.status === 'draft' || broadcast.status === 'scheduled') && onEdit && (
+              <button
+                onClick={onEdit}
+                className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs whitespace-nowrap"
+              >
+                Редактировать
+              </button>
+            )}
             {broadcast.status === 'draft' && (
               <button
                 onClick={onSend}
@@ -99,12 +139,6 @@ export const BroadcastDetails = ({
                 <span className="hidden sm:inline">Копировать</span>
               </button>
             )}
-            <button
-              onClick={onRefresh}
-              className="px-2.5 py-1.5 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors text-xs whitespace-nowrap"
-            >
-              Обновить
-            </button>
             <button
               onClick={onDelete}
               className="px-2.5 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-xs whitespace-nowrap"
@@ -136,27 +170,61 @@ export const BroadcastDetails = ({
               {broadcast.segments && (
                 <div>
                   <h3 className="text-white font-medium mb-3">Сегментация</h3>
-                  <div className="bg-gray-800 rounded-lg p-4 space-y-2">
-                    {broadcast.segments.startParams &&
-                      broadcast.segments.startParams.length > 0 && (
-                        <div>
-                          <span className="text-gray-400 text-sm">
-                            Параметры start:{' '}
-                          </span>
-                          <span className="text-white">
-                            {broadcast.segments.startParams.join(', ')}
-                          </span>
-                        </div>
-                      )}
-                    {broadcast.segments.botIds &&
-                      broadcast.segments.botIds.length > 0 && (
-                        <div>
-                          <span className="text-gray-400 text-sm">Боты: </span>
-                          <span className="text-white">
-                            {broadcast.segments.botIds.length} выбрано
-                          </span>
-                        </div>
-                      )}
+                  <div className="bg-gray-800 rounded-lg p-4 space-y-4">
+                    {!broadcast.segments.startParams?.length && !broadcast.segments.botIds?.length ? (
+                      <div className="text-gray-400 text-sm">
+                        Без сегментации (отправить всем пользователям)
+                      </div>
+                    ) : (
+                      <>
+                        {broadcast.segments.startParams &&
+                          broadcast.segments.startParams.length > 0 && (
+                            <div>
+                              <div className="text-gray-400 text-sm mb-2 font-medium">
+                                Параметры start:
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {broadcast.segments.startParams.map((param) => (
+                                  <span
+                                    key={param}
+                                    className="px-3 py-1.5 bg-purple-600/20 text-purple-400 text-sm rounded-lg border border-purple-600/30"
+                                  >
+                                    {param}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        {broadcast.segments.botIds &&
+                          broadcast.segments.botIds.length > 0 && (
+                            <div>
+                              <div className="text-gray-400 text-sm mb-2 font-medium">
+                                Боты ({broadcast.segments.botIds.length}):
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {broadcast.segments.botIds.map((botId) => {
+                                  const bot = bots.find((b) => b.id === botId);
+                                  return (
+                                    <span
+                                      key={botId}
+                                      className={`px-3 py-1.5 text-sm rounded-lg border ${
+                                        bot?.isActive
+                                          ? 'bg-blue-600/20 text-blue-400 border-blue-600/30'
+                                          : 'bg-gray-600/20 text-gray-400 border-gray-600/30'
+                                      }`}
+                                    >
+                                      @{bot?.username || botId}
+                                      {bot?.isActive === false && (
+                                        <span className="ml-2 text-xs text-red-400">(неактивен)</span>
+                                      )}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                      </>
+                    )}
                   </div>
                 </div>
               )}
@@ -179,27 +247,61 @@ export const BroadcastDetails = ({
             {broadcast.segments && (
               <div>
                 <h3 className="text-white font-medium mb-3">Сегментация</h3>
-                <div className="bg-gray-800 rounded-lg p-4 space-y-2">
-                  {broadcast.segments.startParams &&
-                    broadcast.segments.startParams.length > 0 && (
-                      <div>
-                        <span className="text-gray-400 text-sm">
-                          Параметры start:{' '}
-                        </span>
-                        <span className="text-white">
-                          {broadcast.segments.startParams.join(', ')}
-                        </span>
-                      </div>
-                    )}
-                  {broadcast.segments.botIds &&
-                    broadcast.segments.botIds.length > 0 && (
-                      <div>
-                        <span className="text-gray-400 text-sm">Боты: </span>
-                        <span className="text-white">
-                          {broadcast.segments.botIds.length} выбрано
-                        </span>
-                      </div>
-                    )}
+                <div className="bg-gray-800 rounded-lg p-4 space-y-4">
+                  {!broadcast.segments.startParams?.length && !broadcast.segments.botIds?.length ? (
+                    <div className="text-gray-400 text-sm">
+                      Без сегментации (отправить всем пользователям)
+                    </div>
+                  ) : (
+                    <>
+                      {broadcast.segments.startParams &&
+                        broadcast.segments.startParams.length > 0 && (
+                          <div>
+                            <div className="text-gray-400 text-sm mb-2 font-medium">
+                              Параметры start:
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {broadcast.segments.startParams.map((param) => (
+                                <span
+                                  key={param}
+                                  className="px-3 py-1.5 bg-purple-600/20 text-purple-400 text-sm rounded-lg border border-purple-600/30"
+                                >
+                                  {param}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      {broadcast.segments.botIds &&
+                        broadcast.segments.botIds.length > 0 && (
+                          <div>
+                            <div className="text-gray-400 text-sm mb-2 font-medium">
+                              Боты ({broadcast.segments.botIds.length}):
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {broadcast.segments.botIds.map((botId) => {
+                                const bot = bots.find((b) => b.id === botId);
+                                return (
+                                  <span
+                                    key={botId}
+                                    className={`px-3 py-1.5 text-sm rounded-lg border ${
+                                      bot?.isActive
+                                        ? 'bg-blue-600/20 text-blue-400 border-blue-600/30'
+                                        : 'bg-gray-600/20 text-gray-400 border-gray-600/30'
+                                    }`}
+                                  >
+                                    @{bot?.username || botId}
+                                    {bot?.isActive === false && (
+                                      <span className="ml-2 text-xs text-red-400">(неактивен)</span>
+                                    )}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                    </>
+                  )}
                 </div>
               </div>
             )}

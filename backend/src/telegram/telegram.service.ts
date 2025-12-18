@@ -785,6 +785,26 @@ export class TelegramService implements OnModuleInit {
     return fixed;
   }
 
+  /**
+   * Получает бота из памяти или переинициализирует его, если он активен
+   */
+  private async getBotOrReinitialize(botId: string): Promise<Telegraf> {
+    let bot = this.bots.get(botId);
+    if (!bot) {
+      // Пытаемся переинициализировать бота, если он активен
+      const botEntity = await this.botRepository.findOne({ where: { id: botId } });
+      if (botEntity && botEntity.isActive) {
+        this.logger.log(`Бот ${botId} не найден в памяти, переинициализируем...`);
+        await this.createBot(botEntity.token, botId);
+        bot = this.bots.get(botId);
+      }
+      if (!bot) {
+        throw new Error(`Бот с ID ${botId} не найден или неактивен`);
+      }
+    }
+    return bot;
+  }
+
   // Методы для отправки сообщений от админа
   async sendMessage(
     botId: string, 
@@ -793,10 +813,7 @@ export class TelegramService implements OnModuleInit {
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.TextMessage> {
-    const bot = this.bots.get(botId);
-    if (!bot) {
-      throw new Error(`Бот с ID ${botId} не найден`);
-    }
+    const bot = await this.getBotOrReinitialize(botId);
 
     const options: {
       parse_mode?: string;
@@ -867,10 +884,7 @@ export class TelegramService implements OnModuleInit {
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.PhotoMessage> {
-    const bot = this.bots.get(botId);
-    if (!bot) {
-      throw new Error(`Бот с ID ${botId} не найден`);
-    }
+    const bot = await this.getBotOrReinitialize(botId);
 
     const sendOptions: {
       parse_mode?: string;
@@ -945,10 +959,7 @@ export class TelegramService implements OnModuleInit {
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.VideoMessage> {
-    const bot = this.bots.get(botId);
-    if (!bot) {
-      throw new Error(`Бот с ID ${botId} не найден`);
-    }
+    const bot = await this.getBotOrReinitialize(botId);
 
     this.logger.log(`[DEBUG] Sending video with parse_mode: HTML`);
     const processedCaption = caption ? this.fixHtmlEntities(caption) : undefined;
@@ -984,16 +995,13 @@ export class TelegramService implements OnModuleInit {
   }
 
   async sendVoice(
-    botId: string, 
-    telegramChatId: number, 
-    voice: string | { source: any; filename?: string }, 
+    botId: string,
+    telegramChatId: number,
+    voice: string | { source: any; filename?: string },
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.VoiceMessage> {
-    const bot = this.bots.get(botId);
-    if (!bot) {
-      throw new Error(`Бот с ID ${botId} не найден`);
-    }
+    const bot = await this.getBotOrReinitialize(botId);
 
     this.logger.log(`[DEBUG] Sending voice with parse_mode: HTML`);
     
@@ -1033,20 +1041,7 @@ export class TelegramService implements OnModuleInit {
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.DocumentMessage> {
-    let bot = this.bots.get(botId);
-    if (!bot) {
-      // Попробуем переинициализировать бота из базы, как в uploadFileToTelegram
-      this.logger.warn(`[sendDocument] Bot ${botId} not found in map. Reinitializing...`);
-      const botEntity = await this.botRepository.findOne({ where: { id: botId, isActive: true } });
-      if (!botEntity) {
-        throw new Error(`Бот с ID ${botId} не найден`);
-      }
-      await this.createBot(botEntity.token, botEntity.id);
-      bot = this.bots.get(botId);
-      if (!bot) {
-        throw new Error(`Бот с ID ${botId} не найден после переинициализации`);
-      }
-    }
+    const bot = await this.getBotOrReinitialize(botId);
 
     this.logger.log(`[DEBUG] Sending document with parse_mode: HTML`);
     const processedCaption = caption ? this.fixHtmlEntities(caption) : undefined;
@@ -1089,10 +1084,7 @@ export class TelegramService implements OnModuleInit {
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.AudioMessage> {
-    const bot = this.bots.get(botId);
-    if (!bot) {
-      throw new Error(`Бот с ID ${botId} не найден`);
-    }
+    const bot = await this.getBotOrReinitialize(botId);
 
     this.logger.log(`[DEBUG] Sending audio with parse_mode: HTML`);
     const processedCaption = caption ? this.fixHtmlEntities(caption) : undefined;
@@ -1135,10 +1127,7 @@ export class TelegramService implements OnModuleInit {
     replyToMessageId?: number,
     inlineKeyboard?: Array<Array<{ text: string; callback_data?: string }>>
   ): Promise<TelegramMessage.AnimationMessage> {
-    const bot = this.bots.get(botId);
-    if (!bot) {
-      throw new Error(`Бот с ID ${botId} не найден`);
-    }
+    const bot = await this.getBotOrReinitialize(botId);
 
     this.logger.log(`[DEBUG] Sending animation with parse_mode: HTML`);
     const processedCaption = caption ? this.fixHtmlEntities(caption) : undefined;

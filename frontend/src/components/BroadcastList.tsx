@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import type { Broadcast } from '../types';
 import { BroadcastItem } from './BroadcastItem';
 
@@ -20,10 +21,12 @@ export const BroadcastList = ({
   onStatusFilterChange,
   isLoading,
 }: BroadcastListProps) => {
-  const filteredBroadcasts = broadcasts.filter((broadcast) => {
-    if (statusFilter === 'all') return true;
-    return broadcast.status === statusFilter;
-  });
+  const filteredBroadcasts = useMemo(() => {
+    return broadcasts.filter((broadcast) => {
+      if (statusFilter === 'all') return true;
+      return broadcast.status === statusFilter;
+    });
+  }, [broadcasts, statusFilter]);
 
   return (
     <div className="flex flex-col h-full bg-gray-800">
@@ -44,6 +47,7 @@ export const BroadcastList = ({
         >
           <option value="all">Все статусы</option>
           <option value="draft">Черновики</option>
+          <option value="scheduled">Запланированные</option>
           <option value="sending">Отправка</option>
           <option value="completed">Завершенные</option>
           <option value="failed">Ошибки</option>

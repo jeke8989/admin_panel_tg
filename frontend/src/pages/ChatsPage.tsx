@@ -14,6 +14,7 @@ import { BroadcastsPage } from './BroadcastsPage';
 import { WorkflowsPage } from './WorkflowsPage';
 import { BroadcastDetails } from '../components/BroadcastDetails';
 import { WorkflowEditor } from '../components/WorkflowEditor';
+import { CreateBroadcastModal } from '../components/CreateBroadcastModal';
 import { getBroadcastById, getBroadcastStatistics, sendBroadcast, deleteBroadcast, copyBroadcast, getWorkflowById } from '../utils/api';
 import type { Broadcast, BroadcastStatistics } from '../types';
 import { api, sendMessageWithMedia, markChatAsRead, deleteMessage, clearChatHistory, getBots, createBot, deleteBot, toggleBotStatus, getBotStatistics, getAllTags } from '../utils/api';
@@ -62,6 +63,9 @@ export const ChatsPage = () => {
   const [activeBroadcastId, setActiveBroadcastId] = useState<string | null>(null);
   const [selectedBroadcast, setSelectedBroadcast] = useState<Broadcast | null>(null);
   const [broadcastStatistics, setBroadcastStatistics] = useState<BroadcastStatistics | null>(null);
+  const [isEditBroadcastModalOpen, setIsEditBroadcastModalOpen] = useState(false);
+  const [broadcastToEdit, setBroadcastToEdit] = useState<Broadcast | null>(null);
+  const [broadcastRefreshTrigger, setBroadcastRefreshTrigger] = useState(0);
 
   // Workflows state
   const [activeWorkflowId, setActiveWorkflowId] = useState<string | null>(null);
@@ -793,6 +797,7 @@ export const ChatsPage = () => {
   const handleSendBroadcast = async (id: string) => {
     try {
       await sendBroadcast(id);
+      // Обновляем детали рассылки
       if (activeBroadcastId === id) {
         const [broadcast, statistics] = await Promise.all([
           getBroadcastById(id),
@@ -801,6 +806,8 @@ export const ChatsPage = () => {
         setSelectedBroadcast(broadcast);
         setBroadcastStatistics(statistics);
       }
+      // Принудительно обновляем список рассылок
+      setBroadcastRefreshTrigger(prev => prev + 1);
     } catch (error) {
       console.error('Error sending broadcast:', error);
       showToast('Ошибка при отправке рассылки', 'error');
@@ -823,6 +830,9 @@ export const ChatsPage = () => {
         setSelectedBroadcast(null);
         setBroadcastStatistics(null);
       }
+      
+      // Обновляем список рассылок через BroadcastsPage
+      // Это будет сделано через onBroadcastDeleted callback
       showToast('Рассылка удалена', 'success');
     } catch (error) {
       console.error('Error deleting broadcast:', error);
@@ -965,10 +975,13 @@ export const ChatsPage = () => {
                       setSelectedBroadcast(null);
                       setBroadcastStatistics(null);
                     }
+                    // Принудительно обновляем список рассылок
+                    setBroadcastRefreshTrigger(prev => prev + 1);
                   }}
                   onBroadcastCopied={(id) => {
                     handleBroadcastSelect(id);
                   }}
+                  refreshTrigger={broadcastRefreshTrigger}
                 />
               ) : activeTab === 'workflows' ? (
                 <WorkflowsPage 
@@ -1015,6 +1028,10 @@ export const ChatsPage = () => {
                     onSend={() => selectedBroadcast?.id && handleSendBroadcast(selectedBroadcast.id)}
                     onDelete={() => selectedBroadcast?.id && handleDeleteBroadcast(selectedBroadcast.id)}
                     onCopy={() => selectedBroadcast?.id && handleCopyBroadcast(selectedBroadcast.id)}
+                    onEdit={() => {
+                      setBroadcastToEdit(selectedBroadcast);
+                      setIsEditBroadcastModalOpen(true);
+                    }}
                     onRefresh={async () => {
                       if (activeBroadcastId) {
                         const [broadcast, statistics] = await Promise.all([
@@ -1024,6 +1041,8 @@ export const ChatsPage = () => {
                         setSelectedBroadcast(broadcast);
                         setBroadcastStatistics(statistics);
                       }
+                      // Обновляем список рассылок
+                      setBroadcastRefreshTrigger(prev => prev + 1);
                     }}
                   />
                 ) : (
@@ -1089,6 +1108,32 @@ export const ChatsPage = () => {
         onConfirm={confirmDeleteBroadcast}
         onCancel={() => setBroadcastToDeleteId(null)}
       />
+      {/* Модальное окно редактирования рассылки */}
+      {isEditBroadcastModalOpen && broadcastToEdit && (
+        <CreateBroadcastModal
+          isOpen={isEditBroadcastModalOpen}
+          onClose={() => {
+            setIsEditBroadcastModalOpen(false);
+            setBroadcastToEdit(null);
+          }}
+          onSuccess={async () => {
+            if (activeBroadcastId) {
+              const [broadcast, statistics] = await Promise.all([
+                getBroadcastById(activeBroadcastId),
+                getBroadcastStatistics(activeBroadcastId),
+              ]);
+              setSelectedBroadcast(broadcast);
+              setBroadcastStatistics(statistics);
+            }
+            setIsEditBroadcastModalOpen(false);
+            setBroadcastToEdit(null);
+            showToast('Рассылка обновлена', 'success');
+            // Принудительно обновляем список рассылок
+            setBroadcastRefreshTrigger(prev => prev + 1);
+          }}
+          broadcast={broadcastToEdit}
+        />
+      )}
     </div>
   );
 };
