@@ -192,6 +192,7 @@ export type BroadcastRecipientStatus = typeof BroadcastRecipientStatus[keyof typ
 export interface BroadcastSegments {
   startParams?: string[];
   botIds?: string[];
+  tagTypes?: ('hot' | 'warm' | 'cold' | null)[];
   lastInteractionAfter?: string;
   lastInteractionBefore?: string;
 }

@@ -9,11 +9,12 @@ import { Message } from '../entities/Message.entity';
 import { MessageRead } from '../entities/MessageRead.entity';
 import { BroadcastRecipient } from '../entities/BroadcastRecipient.entity';
 import { BotWorkflow } from '../entities/BotWorkflow.entity';
+import { Tag } from '../entities/Tag.entity';
 import { WorkflowsModule } from '../workflows/workflows.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Bot, Chat, User, Message, MessageRead, BroadcastRecipient, BotWorkflow]),
+    TypeOrmModule.forFeature([Bot, Chat, User, Message, MessageRead, BroadcastRecipient, BotWorkflow, Tag]),
     forwardRef(() => WorkflowsModule),
   ],
   controllers: [TelegramController],

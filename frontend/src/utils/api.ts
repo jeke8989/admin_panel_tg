@@ -445,10 +445,12 @@ export const updateBroadcast = async (
 export const getSegmentationCounts = async (segments?: {
   startParams?: string[];
   botIds?: string[];
+  tagTypes?: ('hot' | 'warm' | 'cold' | null)[];
 }): Promise<{
   total: number;
   byStartParam: Record<string, number>;
   byBotId: Record<string, number>;
+  byTagType: Record<string, number>;
   selectedTotal: number;
 }> => {
   const response = await api.post('/broadcasts/segmentation-counts', {

@@ -8,6 +8,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { TagType } from '../../entities/Tag.entity';
 
 export class BroadcastSegmentsDto {
   @IsArray()
@@ -19,6 +20,10 @@ export class BroadcastSegmentsDto {
   @IsString({ each: true })
   @IsOptional()
   botIds?: string[];
+
+  @IsArray()
+  @IsOptional()
+  tagTypes?: (TagType | null)[];
 }
 
 export class InlineButtonDto {
