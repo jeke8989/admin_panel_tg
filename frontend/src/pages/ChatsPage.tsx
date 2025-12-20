@@ -342,9 +342,16 @@ export const ChatsPage = () => {
     }
   };
 
-  // Подсчет непрочитанных сообщений по категориям
+  // Подсчет непрочитанных сообщений и общего количества чатов по категориям
   const unreadCountsByCategory = useMemo(() => {
-    const counts = {
+    const unreadCounts = {
+      none: 0,
+      hot: 0,
+      warm: 0,
+      cold: 0,
+    };
+
+    const totalCounts = {
       none: 0,
       hot: 0,
       warm: 0,
@@ -354,24 +361,29 @@ export const ChatsPage = () => {
     chats.forEach((chat) => {
       const unreadCount = chat.unreadCount || 0;
       
-      if (!chat.tags || chat.tags.length === 0) {
-        // Чат без тегов - категория "Без категории"
-        counts.none += unreadCount;
-      } else {
-        // Чат с тегами - считаем для каждого типа тега
-        chat.tags.forEach((tag) => {
-          if (tag.tagType === 'hot') {
-            counts.hot += unreadCount;
-          } else if (tag.tagType === 'warm') {
-            counts.warm += unreadCount;
-          } else if (tag.tagType === 'cold') {
-            counts.cold += unreadCount;
-          }
-        });
+      // Определяем категорию чата (приоритет: hot > warm > cold)
+      let category: 'none' | 'hot' | 'warm' | 'cold' = 'none';
+      
+      if (chat.tags && chat.tags.length > 0) {
+        // Ищем тег категории (hot, warm, cold)
+        const categoryTag = chat.tags.find(
+          (tag) => tag.tagType === 'hot' || tag.tagType === 'warm' || tag.tagType === 'cold'
+        );
+        
+        if (categoryTag) {
+          category = categoryTag.tagType as 'hot' | 'warm' | 'cold';
+        }
       }
+      
+      // Считаем для определенной категории (каждый чат считается только один раз)
+      unreadCounts[category] += unreadCount;
+      totalCounts[category] += 1;
     });
 
-    return counts;
+    return {
+      unread: unreadCounts,
+      total: totalCounts,
+    };
   }, [chats]);
 
   // Фильтрация чатов по поисковому запросу и тегам
@@ -961,7 +973,8 @@ export const ChatsPage = () => {
                     tags={tags}
                     selectedTagFilter={selectedTagFilter}
                     onTagFilterChange={setSelectedTagFilter}
-                    unreadCounts={unreadCountsByCategory}
+                    unreadCounts={unreadCountsByCategory.unread}
+                    totalCounts={unreadCountsByCategory.total}
                   />
                 )
               ) : activeTab === 'broadcasts' ? (

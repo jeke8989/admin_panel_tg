@@ -30,12 +30,14 @@ export const CreateBroadcastModal = ({
   const [availableStartParams, setAvailableStartParams] = useState<string[]>([]);
   const [selectedStartParams, setSelectedStartParams] = useState<string[]>([]);
   const [selectedBotIds, setSelectedBotIds] = useState<string[]>([]);
+  const [selectedTagTypes, setSelectedTagTypes] = useState<('hot' | 'warm' | 'cold' | null)[]>([]);
   const [noSegmentation, setNoSegmentation] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [segmentationCounts, setSegmentationCounts] = useState<{
     total: number;
     byStartParam: Record<string, number>;
     byBotId: Record<string, number>;
+    byTagType: Record<string, number>;
     selectedTotal: number;
   } | null>(null);
   const [isLoadingCounts, setIsLoadingCounts] = useState(false);
@@ -64,8 +66,11 @@ export const CreateBroadcastModal = ({
         if (broadcast.segments) {
           setSelectedStartParams(broadcast.segments.startParams || []);
           setSelectedBotIds(broadcast.segments.botIds || []);
+          setSelectedTagTypes(broadcast.segments.tagTypes || []);
           setNoSegmentation(
-            !broadcast.segments.startParams?.length && !broadcast.segments.botIds?.length
+            !broadcast.segments.startParams?.length && 
+            !broadcast.segments.botIds?.length &&
+            !broadcast.segments.tagTypes?.length
           );
         } else {
           setNoSegmentation(true);
@@ -94,6 +99,7 @@ export const CreateBroadcastModal = ({
         setText('');
         setSelectedStartParams([]);
         setSelectedBotIds([]);
+        setSelectedTagTypes([]);
         setNoSegmentation(false);
         setScheduledAt('');
         setEnableScheduling(false);
@@ -112,7 +118,7 @@ export const CreateBroadcastModal = ({
       }, 500);
       return () => clearTimeout(timeoutId);
     }
-  }, [isOpen, selectedStartParams, selectedBotIds, noSegmentation, bots]);
+  }, [isOpen, selectedStartParams, selectedBotIds, selectedTagTypes, noSegmentation, bots]);
 
   useEffect(() => {
     if (isOpen) {
@@ -122,7 +128,7 @@ export const CreateBroadcastModal = ({
       }, 300);
       return () => clearTimeout(timeoutId);
     }
-  }, [selectedStartParams, selectedBotIds, noSegmentation, isOpen]);
+  }, [selectedStartParams, selectedBotIds, selectedTagTypes, noSegmentation, isOpen]);
 
   const loadBots = async () => {
     try {
@@ -162,6 +168,7 @@ export const CreateBroadcastModal = ({
             startParams:
               selectedStartParams.length > 0 ? selectedStartParams : undefined,
             botIds: selectedBotIds.length > 0 ? selectedBotIds : undefined,
+            tagTypes: selectedTagTypes.length > 0 ? selectedTagTypes : undefined,
           };
       const counts = await getSegmentationCounts(segments);
       setSegmentationCounts(counts);
@@ -200,6 +207,7 @@ export const CreateBroadcastModal = ({
       const segments: {
         startParams?: string[];
         botIds?: string[];
+        tagTypes?: ('hot' | 'warm' | 'cold' | null)[];
       } = {};
       if (!noSegmentation) {
         if (selectedStartParams.length > 0) {
@@ -207,6 +215,9 @@ export const CreateBroadcastModal = ({
         }
         if (selectedBotIds.length > 0) {
           segments.botIds = selectedBotIds;
+        }
+        if (selectedTagTypes.length > 0) {
+          segments.tagTypes = selectedTagTypes;
         }
       }
 
@@ -315,6 +326,7 @@ export const CreateBroadcastModal = ({
     setText('');
     setSelectedStartParams([]);
     setSelectedBotIds([]);
+    setSelectedTagTypes([]);
     setNoSegmentation(false);
     setScheduledAt('');
     setEnableScheduling(false);
@@ -417,6 +429,7 @@ export const CreateBroadcastModal = ({
                   if (e.target.checked) {
                     setSelectedStartParams([]);
                     setSelectedBotIds([]);
+                    setSelectedTagTypes([]);
                   }
                 }}
                 className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
@@ -515,6 +528,118 @@ export const CreateBroadcastModal = ({
                     </div>
                   </div>
                 )}
+
+                {/* Категории пользователей */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Категории пользователей (выберите одну или несколько)
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {/* Без категории */}
+                    <label className="flex items-center px-3 py-1.5 bg-gray-700 rounded cursor-pointer hover:bg-gray-600 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={selectedTagTypes.includes(null)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedTagTypes([...selectedTagTypes, null]);
+                          } else {
+                            setSelectedTagTypes(
+                              selectedTagTypes.filter((t) => t !== null),
+                            );
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 mr-2"
+                      />
+                      <span className="text-sm text-white">
+                        Без категории
+                        {segmentationCounts?.byTagType?.none !== undefined && (
+                          <span className="ml-1 text-blue-400">
+                            ({segmentationCounts.byTagType.none} пользователей)
+                          </span>
+                        )}
+                      </span>
+                    </label>
+
+                    {/* Горячие */}
+                    <label className="flex items-center px-3 py-1.5 bg-gray-700 rounded cursor-pointer hover:bg-gray-600 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={selectedTagTypes.includes('hot')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedTagTypes([...selectedTagTypes, 'hot']);
+                          } else {
+                            setSelectedTagTypes(
+                              selectedTagTypes.filter((t) => t !== 'hot'),
+                            );
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 mr-2"
+                      />
+                      <span className="text-sm text-white">
+                        Горячие
+                        {segmentationCounts?.byTagType?.hot !== undefined && (
+                          <span className="ml-1 text-red-400">
+                            ({segmentationCounts.byTagType.hot} пользователей)
+                          </span>
+                        )}
+                      </span>
+                    </label>
+
+                    {/* Теплые */}
+                    <label className="flex items-center px-3 py-1.5 bg-gray-700 rounded cursor-pointer hover:bg-gray-600 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={selectedTagTypes.includes('warm')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedTagTypes([...selectedTagTypes, 'warm']);
+                          } else {
+                            setSelectedTagTypes(
+                              selectedTagTypes.filter((t) => t !== 'warm'),
+                            );
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 mr-2"
+                      />
+                      <span className="text-sm text-white">
+                        Теплые
+                        {segmentationCounts?.byTagType?.warm !== undefined && (
+                          <span className="ml-1 text-yellow-400">
+                            ({segmentationCounts.byTagType.warm} пользователей)
+                          </span>
+                        )}
+                      </span>
+                    </label>
+
+                    {/* Холодные */}
+                    <label className="flex items-center px-3 py-1.5 bg-gray-700 rounded cursor-pointer hover:bg-gray-600 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={selectedTagTypes.includes('cold')}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedTagTypes([...selectedTagTypes, 'cold']);
+                          } else {
+                            setSelectedTagTypes(
+                              selectedTagTypes.filter((t) => t !== 'cold'),
+                            );
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 mr-2"
+                      />
+                      <span className="text-sm text-white">
+                        Холодные
+                        {segmentationCounts?.byTagType?.cold !== undefined && (
+                          <span className="ml-1 text-blue-400">
+                            ({segmentationCounts.byTagType.cold} пользователей)
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  </div>
+                </div>
               </div>
             )}
 

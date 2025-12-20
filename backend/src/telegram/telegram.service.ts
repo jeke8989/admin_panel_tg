@@ -10,6 +10,7 @@ import { Message, MessageType } from '../entities/Message.entity';
 import { MessageRead } from '../entities/MessageRead.entity';
 import { BroadcastRecipient } from '../entities/BroadcastRecipient.entity';
 import { BotWorkflow } from '../entities/BotWorkflow.entity';
+import { Tag, TagType } from '../entities/Tag.entity';
 import { WorkflowExecutorService } from '../workflows/workflow-executor.service';
 import * as iconv from 'iconv-lite';
 
@@ -33,6 +34,8 @@ export class TelegramService implements OnModuleInit {
     private broadcastRecipientRepository: Repository<BroadcastRecipient>,
     @InjectRepository(BotWorkflow)
     private workflowsRepository: Repository<BotWorkflow>,
+    @InjectRepository(Tag)
+    private tagRepository: Repository<Tag>,
     @Inject(forwardRef(() => WorkflowExecutorService))
     private workflowExecutor: WorkflowExecutorService,
     private dataSource: DataSource,
@@ -206,6 +209,14 @@ export class TelegramService implements OnModuleInit {
         return;
       }
 
+      // Обработка callback для категорий пользователей (hot_1, warm_1, cold_1)
+      if (data === 'hot_1' || data === 'warm_1' || data === 'cold_1') {
+        await this.handleCategoryCallback(ctx, botId, data, chatId, telegramChatId);
+        // Ответ на callback query
+        await ctx.answerCbQuery();
+        return;
+      }
+
       // Execute workflow for button click (callback)
       await this.workflowExecutor.executeWorkflow(botId, 'callback', { 
         callbackQuery, 
@@ -222,6 +233,136 @@ export class TelegramService implements OnModuleInit {
       
     } catch (error) {
       this.logger.error('Ошибка при обработке callback query:', error);
+    }
+  }
+
+  /**
+   * Обрабатывает callback для категорий пользователей (hot_1, warm_1, cold_1)
+   */
+  private async handleCategoryCallback(
+    ctx: Context,
+    botId: string,
+    callbackData: string,
+    chatId: string | undefined,
+    telegramChatId: number | undefined,
+  ): Promise<void> {
+    try {
+      if (!chatId || !telegramChatId) {
+        this.logger.warn('Не удалось обработать callback категории: нет chatId или telegramChatId');
+        return;
+      }
+
+      // Определяем тип категории по callback
+      let tagType: TagType;
+      if (callbackData === 'hot_1') {
+        tagType = TagType.HOT;
+      } else if (callbackData === 'warm_1') {
+        tagType = TagType.WARM;
+      } else if (callbackData === 'cold_1') {
+        tagType = TagType.COLD;
+      } else {
+        this.logger.warn(`Неизвестный callback для категории: ${callbackData}`);
+        return;
+      }
+
+      // Находим тег по типу
+      const tag = await this.tagRepository.findOne({
+        where: { tagType },
+      });
+
+      if (!tag) {
+        this.logger.warn(`Тег с типом ${tagType} не найден в базе данных. Убедитесь, что теги категорий созданы.`);
+        return;
+      }
+
+      this.logger.log(`Найден тег категории: ${tag.name} (${tag.id}) для типа ${tagType}`);
+
+      // Загружаем чат с тегами
+      const chat = await this.chatRepository.findOne({
+        where: { id: chatId },
+        relations: ['tags'],
+      });
+
+      if (!chat) {
+        this.logger.warn(`Чат ${chatId} не найден`);
+        return;
+      }
+
+      // Находим все теги категорий (hot, warm, cold) для удаления
+      const categoryTags = await this.tagRepository.find({
+        where: { tagType: In([TagType.HOT, TagType.WARM, TagType.COLD]) },
+      });
+
+      this.logger.log(
+        `Найдено ${categoryTags.length} тегов категорий для удаления из чата ${chatId}`,
+      );
+
+      // Удаляем все старые теги категорий через QueryBuilder
+      if (categoryTags.length > 0) {
+        const categoryTagIds = categoryTags.map((t) => t.id);
+        const deleteResult = await this.dataSource
+          .createQueryBuilder()
+          .delete()
+          .from('chat_tags')
+          .where('chat_id = :chatId', { chatId })
+          .andWhere('tag_id IN (:...tagIds)', { tagIds: categoryTagIds })
+          .execute();
+
+        this.logger.log(
+          `Удалено ${deleteResult.affected || 0} связей категорий из чата ${chatId}`,
+        );
+      }
+
+      // Добавляем новый тег через QueryBuilder
+      // Сначала проверяем, не добавлен ли уже этот тег (на случай, если он был добавлен до удаления)
+      const existingTag = await this.dataSource
+        .createQueryBuilder()
+        .select('*')
+        .from('chat_tags', 'ct')
+        .where('ct.chat_id = :chatId', { chatId })
+        .andWhere('ct.tag_id = :tagId', { tagId: tag.id })
+        .getRawOne();
+
+      if (!existingTag) {
+        const insertResult = await this.dataSource
+          .createQueryBuilder()
+          .insert()
+          .into('chat_tags')
+          .values({
+            chat_id: chatId,
+            tag_id: tag.id,
+          })
+          .execute();
+
+        this.logger.log(
+          `Добавлена связь чата ${chatId} с тегом ${tag.name} (${tag.id}). Вставлено записей: ${insertResult.identifiers?.length || 0}`,
+        );
+      } else {
+        this.logger.log(
+          `Связь чата ${chatId} с тегом ${tag.name} уже существует`,
+        );
+      }
+
+      this.logger.log(
+        `Пользователь ${chat.userId} перемещен в категорию ${tagType} (чат ${chatId})`,
+      );
+
+      this.logger.log(
+        `Пользователь ${chat.userId} перемещен в категорию ${tagType} (чат ${chatId})`,
+      );
+
+      // Отправляем сообщение пользователю
+      const thankYouMessage =
+        'Благодарим за обратную связь. Ваше мнение крайне важно. Спасибо, что помогаете нам улучшать сервис! 🤝';
+
+      try {
+        await this.sendMessage(botId, telegramChatId, thankYouMessage);
+      } catch (error) {
+        this.logger.error('Ошибка при отправке сообщения благодарности:', error);
+        // Не прерываем выполнение, если не удалось отправить сообщение
+      }
+    } catch (error) {
+      this.logger.error('Ошибка при обработке callback категории:', error);
     }
   }
 

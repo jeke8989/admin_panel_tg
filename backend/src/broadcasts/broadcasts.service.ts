@@ -256,6 +256,7 @@ export class BroadcastsService {
   async getRecipients(segments: {
     startParams?: string[];
     botIds?: string[];
+    tagTypes?: (string | null)[];
   }): Promise<Array<{ user: User; chat: Chat; bot: Bot }>> {
     // Начинаем с базового запроса для пользователей, которые взаимодействовали с ботами
     let queryBuilder = this.userRepository
@@ -277,6 +278,50 @@ export class BroadcastsService {
       queryBuilder = queryBuilder.andWhere('bot.id IN (:...botIds)', {
         botIds: segments.botIds,
       });
+    }
+
+    // Фильтрация по категориям (tagTypes)
+    if (segments.tagTypes && segments.tagTypes.length > 0) {
+      const hasNull = segments.tagTypes.includes(null);
+      const tagTypes = segments.tagTypes.filter((t): t is string => t !== null);
+
+      if (hasNull && tagTypes.length > 0) {
+        // Если выбраны и категории, и "Без категории"
+        queryBuilder = queryBuilder.andWhere(
+          `(
+            EXISTS (
+              SELECT 1 FROM chat_tags ct
+              INNER JOIN tags t ON ct.tag_id = t.id
+              WHERE ct.chat_id = chat.id AND t.tag_type IN (:...tagTypes)
+            )
+            OR NOT EXISTS (
+              SELECT 1 FROM chat_tags ct
+              INNER JOIN tags t ON ct.tag_id = t.id
+              WHERE ct.chat_id = chat.id AND t.tag_type IN ('hot', 'warm', 'cold')
+            )
+          )`,
+          { tagTypes },
+        );
+      } else if (hasNull) {
+        // Только "Без категории" - чаты без тегов категорий hot/warm/cold
+        queryBuilder = queryBuilder.andWhere(
+          `NOT EXISTS (
+            SELECT 1 FROM chat_tags ct
+            INNER JOIN tags t ON ct.tag_id = t.id
+            WHERE ct.chat_id = chat.id AND t.tag_type IN ('hot', 'warm', 'cold')
+          )`,
+        );
+      } else if (tagTypes.length > 0) {
+        // Только конкретные категории
+        queryBuilder = queryBuilder.andWhere(
+          `EXISTS (
+            SELECT 1 FROM chat_tags ct
+            INNER JOIN tags t ON ct.tag_id = t.id
+            WHERE ct.chat_id = chat.id AND t.tag_type IN (:...tagTypes)
+          )`,
+          { tagTypes },
+        );
+      }
     }
 
     // Получаем уникальных пользователей с их чатами и ботами
@@ -531,6 +576,17 @@ export class BroadcastsService {
 
         sentCount++;
 
+        // Если сообщение успешно отправлено, снимаем флаг блокировки бота (если был установлен)
+        const chat = await this.chatRepository.findOne({
+          where: { id: recipient.chatId },
+        });
+        if (chat && chat.isBotBlocked) {
+          await this.chatRepository.update(recipient.chatId, { isBotBlocked: false });
+          this.logger.log(
+            `Чат ${recipient.chatId} разблокирован для бота ${recipient.botId}`,
+          );
+        }
+
         // Сообщение считается доставленным сразу после отправки (Telegram не предоставляет точную информацию о доставке)
         await this.recipientRepository.update(recipient.id, {
           status: BroadcastRecipientStatus.DELIVERED,
@@ -545,6 +601,17 @@ export class BroadcastsService {
           `Ошибка при отправке сообщения получателю ${recipient.id}:`,
           error,
         );
+        
+        // Проверяем, заблокирован ли бот пользователем
+        const isBlockedError = this.isBotBlockedError(error);
+        if (isBlockedError) {
+          // Помечаем чат как заблокированный
+          await this.chatRepository.update(recipient.chatId, { isBotBlocked: true });
+          this.logger.warn(
+            `Чат ${recipient.chatId} помечен как заблокированный для бота ${recipient.botId}`,
+          );
+        }
+        
         await this.recipientRepository.update(recipient.id, {
           status: BroadcastRecipientStatus.FAILED,
           errorMessage: error instanceof Error ? error.message : String(error),
@@ -1040,10 +1107,12 @@ export class BroadcastsService {
   async getSegmentationCounts(segments?: {
     startParams?: string[];
     botIds?: string[];
+    tagTypes?: (string | null)[];
   }): Promise<{
     total: number;
     byStartParam: Record<string, number>;
     byBotId: Record<string, number>;
+    byTagType: Record<string, number>;
     selectedTotal: number;
   }> {
     // Базовый запрос для всех пользователей
@@ -1107,9 +1176,41 @@ export class BroadcastsService {
       byBotId[bot.id] = parseInt(countResult?.count || '0', 10);
     }
 
+    // Подсчет по категориям (tagTypes)
+    const byTagType: Record<string, number> = {};
+    
+    // Подсчет для каждой категории
+    const tagTypes = ['hot', 'warm', 'cold'];
+    for (const tagType of tagTypes) {
+      const countResult = await this.userRepository
+        .createQueryBuilder('user')
+        .innerJoin('user.chats', 'chat')
+        .innerJoin('chat.bot', 'bot')
+        .innerJoin('chat.tags', 'tag')
+        .where('bot.isActive = :isActive', { isActive: true })
+        .andWhere('user.isBot = :isBot', { isBot: false })
+        .andWhere('tag.tagType = :tagType', { tagType })
+        .select('COUNT(DISTINCT user.id)', 'count')
+        .getRawOne();
+      byTagType[tagType] = parseInt(countResult?.count || '0', 10);
+    }
+
+    // Подсчет для "Без категории" (пользователи без тегов hot/warm/cold)
+    const noCategoryCountResult = await this.userRepository
+      .createQueryBuilder('user')
+      .innerJoin('user.chats', 'chat')
+      .innerJoin('chat.bot', 'bot')
+      .leftJoin('chat.tags', 'tag', "tag.tagType IN ('hot', 'warm', 'cold')")
+      .where('bot.isActive = :isActive', { isActive: true })
+      .andWhere('user.isBot = :isBot', { isBot: false })
+      .andWhere('tag.id IS NULL')
+      .select('COUNT(DISTINCT user.id)', 'count')
+      .getRawOne();
+    byTagType['none'] = parseInt(noCategoryCountResult?.count || '0', 10);
+
     // Подсчет общего количества для выбранных сегментов
     let selectedTotal = total;
-    if (segments && (segments.startParams?.length || segments.botIds?.length)) {
+    if (segments && (segments.startParams?.length || segments.botIds?.length || segments.tagTypes?.length)) {
       let selectedQueryBuilder = this.userRepository
         .createQueryBuilder('user')
         .innerJoin('user.chats', 'chat')
@@ -1133,6 +1234,50 @@ export class BroadcastsService {
         );
       }
 
+      // Фильтрация по категориям (tagTypes)
+      if (segments.tagTypes && segments.tagTypes.length > 0) {
+        const hasNull = segments.tagTypes.includes(null);
+        const tagTypes = segments.tagTypes.filter((t): t is string => t !== null);
+
+        if (hasNull && tagTypes.length > 0) {
+          // Если выбраны и категории, и "Без категории"
+          selectedQueryBuilder = selectedQueryBuilder.andWhere(
+            `(
+              EXISTS (
+                SELECT 1 FROM chat_tags ct
+                INNER JOIN tags t ON ct.tag_id = t.id
+                WHERE ct.chat_id = chat.id AND t.tag_type IN (:...tagTypes)
+              )
+              OR NOT EXISTS (
+                SELECT 1 FROM chat_tags ct
+                INNER JOIN tags t ON ct.tag_id = t.id
+                WHERE ct.chat_id = chat.id AND t.tag_type IN ('hot', 'warm', 'cold')
+              )
+            )`,
+            { tagTypes },
+          );
+        } else if (hasNull) {
+          // Только "Без категории"
+          selectedQueryBuilder = selectedQueryBuilder.andWhere(
+            `NOT EXISTS (
+              SELECT 1 FROM chat_tags ct
+              INNER JOIN tags t ON ct.tag_id = t.id
+              WHERE ct.chat_id = chat.id AND t.tag_type IN ('hot', 'warm', 'cold')
+            )`,
+          );
+        } else if (tagTypes.length > 0) {
+          // Только конкретные категории
+          selectedQueryBuilder = selectedQueryBuilder.andWhere(
+            `EXISTS (
+              SELECT 1 FROM chat_tags ct
+              INNER JOIN tags t ON ct.tag_id = t.id
+              WHERE ct.chat_id = chat.id AND t.tag_type IN (:...tagTypes)
+            )`,
+            { tagTypes },
+          );
+        }
+      }
+
       const selectedResult = await selectedQueryBuilder
         .select('COUNT(DISTINCT user.id)', 'count')
         .getRawOne();
@@ -1143,8 +1288,62 @@ export class BroadcastsService {
       total,
       byStartParam,
       byBotId,
+      byTagType,
       selectedTotal,
     };
+  }
+
+  /**
+   * Проверяет, является ли ошибка ошибкой блокировки бота пользователем
+   */
+  private isBotBlockedError(error: any): boolean {
+    if (!error) return false;
+
+    // Проверяем код ошибки (403 обычно означает блокировку)
+    const errorCode = error.response?.error_code || error.error_code;
+    
+    // Получаем сообщение об ошибке из различных источников
+    const errorMessage = 
+      error.response?.description || 
+      error.description || 
+      error.message || 
+      String(error);
+
+    if (!errorMessage) {
+      // Если нет сообщения, но есть код 403, считаем это блокировкой
+      return errorCode === 403;
+    }
+
+    const lowerErrorMessage = errorMessage.toLowerCase();
+
+    // Паттерны ошибок, указывающих на блокировку бота
+    const blockedPatterns = [
+      'bot was blocked by the user',
+      'bot blocked by the user',
+      'user is deactivated',
+      'chat not found',
+      'forbidden: bot was blocked',
+      'forbidden: user is deactivated',
+      'forbidden: chat not found',
+      'forbidden: the group chat was deleted',
+      'bad request: chat not found',
+      'bad request: group chat was deleted',
+    ];
+
+    // Проверяем код ошибки (403 обычно означает блокировку)
+    if (errorCode === 403) {
+      // 403 может означать разные вещи, проверяем описание
+      if (lowerErrorMessage.includes('blocked') || 
+          lowerErrorMessage.includes('deactivated') ||
+          lowerErrorMessage.includes('chat not found')) {
+        return true;
+      }
+    }
+
+    // Проверяем по паттернам
+    return blockedPatterns.some(pattern => 
+      lowerErrorMessage.includes(pattern.toLowerCase())
+    );
   }
 }
 
