@@ -26,9 +26,10 @@ interface NodeSettingsPanelProps {
   onChange: (nodeId: string, data: ReactFlowNode['data']) => void;
   onClose: () => void;
   onDelete: (nodeId: string) => void;
+  onCopy?: (nodeId: string) => void;
 }
 
-export const NodeSettingsPanel = ({ node, botIds, onChange, onClose, onDelete }: NodeSettingsPanelProps) => {
+export const NodeSettingsPanel = ({ node, botIds, onChange, onClose, onDelete, onCopy }: NodeSettingsPanelProps) => {
   const [label, setLabel] = useState('');
   const [config, setConfig] = useState<ReactFlowNode['data']>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -90,6 +91,18 @@ export const NodeSettingsPanel = ({ node, botIds, onChange, onClose, onDelete }:
       <div className="flex justify-between items-center mb-6">
         <h3 className="text-white font-medium text-lg">Настройки узла</h3>
         <div className="flex items-center gap-2">
+          {onCopy && (
+            <button 
+              onClick={() => onCopy(node.id)} 
+              className="text-blue-400 hover:text-blue-300 p-1 rounded hover:bg-gray-700 transition-colors"
+              title="Копировать узел"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h9a2 2 0 012 2v9a2 2 0 01-2 2H8a2 2 0 01-2-2V9a2 2 0 012-2z"/>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7V5a2 2 0 00-2-2H7a2 2 0 00-2 2v9a2 2 0 002 2h2"/>
+              </svg>
+            </button>
+          )}
           <button 
             onClick={() => setShowDeleteConfirm(true)} 
             className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-gray-700 transition-colors"
@@ -142,6 +155,21 @@ export const NodeSettingsPanel = ({ node, botIds, onChange, onClose, onDelete }:
                     className="w-full bg-gray-700 border border-gray-600 rounded pl-6 pr-3 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
                     placeholder="start"
                 />
+              </div>
+              <div className="mt-4">
+                <label className="block text-gray-400 text-xs uppercase font-bold mb-2">
+                  Префикс параметра (опционально)
+                </label>
+                <input
+                  type="text"
+                  value={(config.startParamPrefix as string) || ''}
+                  onChange={e => handleChange('startParamPrefix', e.target.value)}
+                  className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  placeholder="например w_ или s_"
+                />
+                <p className="text-gray-500 text-xs mt-1">
+                  Если указать, триггер сработает только когда параметр после команды начинается с этого префикса (пример: /start w_site).
+                </p>
               </div>
            </div>
         )}

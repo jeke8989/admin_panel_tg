@@ -40,8 +40,30 @@ export class TriggerExecutor extends NodeExecutor {
             if (!text) return false;
             
             // Exact match or match followed by space
-            const parts = text.split(' ');
-            return parts[0] === command;
+            const parts = text.split(' ').filter(p => p.length > 0); // Убираем пустые части
+            if (parts[0] !== command) return false;
+
+            const startParamPrefix = config.startParamPrefix?.toLowerCase()?.trim();
+            const hasParam = parts.length > 1;
+            const param = hasParam ? parts[1].toLowerCase() : '';
+
+            this.logger.debug(`Command trigger check: command="${command}", parts=${JSON.stringify(parts)}, hasParam=${hasParam}, param="${param}", startParamPrefix="${startParamPrefix || 'none'}"`);
+
+            // Если задан префикс — требуем параметр с этим префиксом
+            if (startParamPrefix) {
+                if (!hasParam) {
+                    this.logger.debug(`Prefix "${startParamPrefix}" required but no param found`);
+                    return false;
+                }
+                const matches = param.startsWith(startParamPrefix);
+                this.logger.debug(`Prefix "${startParamPrefix}" check: ${matches}`);
+                return matches;
+            }
+
+            // Если префикс НЕ задан — этот триггер универсальный (работает для всех остальных случаев)
+            // Срабатывает всегда когда команда совпадает
+            this.logger.debug(`No prefix - universal trigger, matches!`);
+            return true;
         }
             
         case 'trigger-text': {

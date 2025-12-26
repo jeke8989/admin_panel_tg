@@ -52,6 +52,11 @@ export class WorkflowExecutorService {
       return false;
     });
 
+    // Приоритизация сценариев: сначала те, где есть trigger-command с startParamPrefix (спец /start w_*), потом остальные
+    const hasPrefixTrigger = (wf: BotWorkflow) =>
+      wf.nodes?.some((n) => n.type === 'trigger-command' && n.config?.startParamPrefix) ? 1 : 0;
+    workflows.sort((a, b) => hasPrefixTrigger(b) - hasPrefixTrigger(a));
+
     this.logger.log(`Executing workflows for bot ${botId}, triggerType: ${triggerType}, found ${workflows.length} active workflows out of ${allWorkflows.length} total`);
     
     if (workflows.length === 0) {
@@ -65,13 +70,20 @@ export class WorkflowExecutorService {
       });
     }
 
+    let executed = false;
     for (const workflow of workflows) {
       // 2. Find trigger nodes
       const triggerNodes = workflow.nodes.filter(n => n.type.startsWith('trigger-'));
+      // Приоритизируем команды с префиксом параметра (startParamPrefix), чтобы спец. /start w_* ловились до общего /start
+      const sortedTriggerNodes = [...triggerNodes].sort((a, b) => {
+        const aPref = a.config?.startParamPrefix ? 1 : 0;
+        const bPref = b.config?.startParamPrefix ? 1 : 0;
+        return bPref - aPref;
+      });
       
-      this.logger.debug(`Workflow ${workflow.name} has ${triggerNodes.length} trigger nodes`);
+      this.logger.debug(`Workflow ${workflow.name} has ${sortedTriggerNodes.length} trigger nodes`);
       
-      for (const node of triggerNodes) {
+      for (const node of sortedTriggerNodes) {
         // 3. Check if trigger matches
         const isTriggered = await this.triggerExecutor.execute(node, { ...context, triggerType });
         
@@ -80,9 +92,11 @@ export class WorkflowExecutorService {
         if (isTriggered) {
           this.logger.log(`Executing workflow ${workflow.name} triggered by ${node.type}`);
           await this.executeNodeChain(node, workflow, context);
-          break; // Stop after first matching trigger to avoid duplicate executions
+          executed = true;
+          break; // Stop after first matching trigger inside this workflow
         }
       }
+      if (executed) break; // Stop after first matched workflow
     }
   }
 

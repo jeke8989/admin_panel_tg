@@ -13,7 +13,14 @@ export const TriggerNode = ({ data, type }: NodeProps) => {
     <div className="bg-gray-800 border-2 border-blue-500 rounded-lg p-3 min-w-[150px] shadow-lg">
       <div className="text-blue-400 font-bold text-xs mb-1 uppercase tracking-wider">{getDisplayName()} Trigger</div>
       <div className="text-white text-sm font-medium">{data.label}</div>
-      {data.command && <div className="text-gray-400 text-xs mt-1">/{data.command}</div>}
+      {data.command && (
+        <div className="text-gray-400 text-xs mt-1">
+          /{data.command}
+          {data.startParamPrefix && (
+            <span className="text-yellow-400 ml-1">[prefix: {data.startParamPrefix}]</span>
+          )}
+        </div>
+      )}
       {data.text && <div className="text-gray-400 text-xs mt-1">"{data.text}"</div>}
       {(data.callbackData || data.data) && (
         <div className="text-gray-400 text-xs mt-1">
