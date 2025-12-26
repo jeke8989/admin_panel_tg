@@ -423,7 +423,10 @@ export class TelegramService implements OnModuleInit {
 
       // Execute Workflow
       const isCommand = telegramMessage.text.startsWith('/');
+      this.logger.log(`[WORKFLOW_DEBUG] Message text: "${telegramMessage.text}", isCommand: ${isCommand}, botId: ${botId}`);
+      
       if (isCommand) {
+        this.logger.log(`[WORKFLOW_DEBUG] Executing COMMAND workflow`);
         await this.workflowExecutor.executeWorkflow(botId, 'command', { 
             message: telegramMessage, 
             chatId: chat.id,
@@ -431,7 +434,9 @@ export class TelegramService implements OnModuleInit {
             botId,
             user 
         });
+        this.logger.log(`[WORKFLOW_DEBUG] COMMAND workflow execution completed`);
       } else {
+        this.logger.log(`[WORKFLOW_DEBUG] Executing TEXT workflow`);
         await this.workflowExecutor.executeWorkflow(botId, 'text', { 
             message: telegramMessage, 
             chatId: chat.id,
@@ -439,6 +444,7 @@ export class TelegramService implements OnModuleInit {
             botId,
             user 
         });
+        this.logger.log(`[WORKFLOW_DEBUG] TEXT workflow execution completed`);
       }
 
     } catch (error) {

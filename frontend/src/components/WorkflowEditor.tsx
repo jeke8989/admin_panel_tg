@@ -134,6 +134,27 @@ export const WorkflowEditor = ({ workflow, onClose }: WorkflowEditorProps) => {
     setSelectedNode(null);
   };
 
+  const handleCopyNode = (nodeId: string) => {
+    setNodes((nds) => {
+      const original = nds.find((n) => n.id === nodeId);
+      if (!original) return nds;
+
+      const newId = `node_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`;
+      const offset = 30;
+      const newNode = {
+        ...original,
+        id: newId,
+        position: {
+          x: (original.position?.x || 0) + offset,
+          y: (original.position?.y || 0) + offset,
+        },
+        selected: false,
+      };
+
+      return [...nds, newNode];
+    });
+  };
+
   const handleToggleActive = async () => {
     setIsToggling(true);
     try {
@@ -432,6 +453,7 @@ export const WorkflowEditor = ({ workflow, onClose }: WorkflowEditorProps) => {
                 onChange={handleNodeChange} 
                 onClose={() => setSelectedNode(null)}
                 onDelete={handleDeleteNode}
+                onCopy={handleCopyNode}
             />
           )}
         </div>
