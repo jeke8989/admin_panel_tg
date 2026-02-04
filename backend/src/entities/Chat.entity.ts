@@ -68,6 +68,7 @@ export class Chat {
   lastMessageId: string | null;
 
   @Column({ type: 'timestamp', nullable: true, name: 'last_message_at' })
+  @Index() // Индекс для быстрой сортировки чатов по времени последнего сообщения
   lastMessageAt: Date | null;
 
   @Column({ type: 'boolean', default: false, name: 'is_bot_blocked' })
