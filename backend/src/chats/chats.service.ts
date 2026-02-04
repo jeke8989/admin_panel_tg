@@ -63,6 +63,16 @@ export class ChatsService {
       .leftJoinAndSelect('chat.lastMessage', 'lastMessage')
       .leftJoinAndSelect('lastMessage.sender', 'sender')
       .leftJoinAndSelect('chat.tags', 'tags')
+      // Оптимизация: используем loadRelationCountAndMap для подсчета непрочитанных сообщений
+      // Это заменяет N отдельных запросов COUNT на один эффективный подзапрос
+      .loadRelationCountAndMap(
+        'chat.unreadCount',
+        'chat.messages',
+        'unreadMessages',
+        (qb) => qb
+          .where('unreadMessages.isFromAdmin = :isFromAdmin', { isFromAdmin: false })
+          .andWhere('unreadMessages.isRead = :isRead', { isRead: false })
+      )
       .where('bot.isActive = :isActive', { isActive: true });
 
     if (tagId) {
@@ -85,26 +95,8 @@ export class ChatsService {
        this.logger.log('[DEBUG_CHATS] No chats found.');
     }
 
-    // Добавляем количество непрочитанных сообщений для каждого чата
-    // Считаем только сообщения от пользователей (не от админов)
-    const chatsWithUnread = await Promise.all(
-      chats.map(async (chat) => {
-        const unreadCount = await this.messageRepository.count({
-          where: {
-            chatId: chat.id,
-            isFromAdmin: false,
-            isRead: false, // Считаем непрочитанные сообщения от пользователей
-          },
-        });
-
-        return {
-          ...chat,
-          unreadCount,
-        };
-      }),
-    );
-
-    return chatsWithUnread;
+    // unreadCount уже добавлен через loadRelationCountAndMap
+    return chats;
   }
 
   async findMessagesByChatId(chatId: string, dto: GetMessagesDto) {

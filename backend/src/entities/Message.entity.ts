@@ -30,6 +30,7 @@ export enum MessageType {
 }
 
 @Entity('messages')
+@Index(['chatId', 'isFromAdmin', 'isRead']) // Композитный индекс для подсчета непрочитанных
 export class Message {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -59,6 +60,7 @@ export class Message {
   senderId: string;
 
   @Column({ type: 'boolean', default: false, name: 'is_from_admin' })
+  @Index() // Индекс для фильтрации по отправителю
   isFromAdmin: boolean;
 
   @Column({ type: 'boolean', default: false, name: 'is_from_bot' })
@@ -68,6 +70,7 @@ export class Message {
   isDelivered: boolean;
 
   @Column({ type: 'boolean', default: false, name: 'is_read' })
+  @Index() // Индекс для фильтрации по статусу прочтения
   isRead: boolean;
 
   @Column({ type: 'bigint', name: 'telegram_message_id' })

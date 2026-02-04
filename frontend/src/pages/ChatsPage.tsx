@@ -97,10 +97,10 @@ export const ChatsPage = () => {
   useEffect(() => {
     loadTags();
     loadChats();
-    // Автообновление списка чатов каждые 5 секунд
+    // Автообновление списка чатов каждые 15 секунд (оптимизация нагрузки на сервер)
     const chatsInterval = setInterval(() => {
       loadChats();
-    }, 5000);
+    }, 15000);
 
     return () => clearInterval(chatsInterval);
   }, []);
@@ -111,13 +111,13 @@ export const ChatsPage = () => {
     }
   }, [activeChatId]);
 
-  // Автообновление сообщений активного чата каждые 3 секунды
+  // Автообновление сообщений активного чата каждые 10 секунд (оптимизация нагрузки на сервер)
   useEffect(() => {
     if (!activeChatId) return;
 
     const messagesInterval = setInterval(() => {
       loadMessages(activeChatId);
-    }, 3000);
+    }, 10000);
 
     return () => clearInterval(messagesInterval);
   }, [activeChatId]);
