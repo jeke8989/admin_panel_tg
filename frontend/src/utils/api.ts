@@ -46,6 +46,20 @@ if (API_BASE_URL && !/^https?:\/\//i.test(API_BASE_URL)) {
 
 console.log(MODE, API_BASE_URL);
 
+// Базовый URL бэкенда (без /api) для статических файлов (/uploads/...)
+const BACKEND_BASE_URL = API_BASE_URL?.replace(/\/api\/?$/, '') || '';
+
+/**
+ * Преобразует URL файла в абсолютный URL бэкенда.
+ * Telegram URLs (https://...) возвращаются как есть.
+ * Относительные пути (/uploads/...) дополняются хостом бэкенда.
+ */
+export const resolveFileUrl = (fileUrl: string | null | undefined): string | undefined => {
+  if (!fileUrl) return undefined;
+  if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) return fileUrl;
+  return `${BACKEND_BASE_URL}${fileUrl}`;
+};
+
 export const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {

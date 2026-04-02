@@ -3,6 +3,7 @@ import type { Message } from '../types';
 import { MessageType, CURRENT_USER_ID } from '../types';
 import { TgsSticker } from './TgsSticker';
 import { MessageReactions } from './MessageReactions';
+import { resolveFileUrl } from '../utils/api';
 
 interface MessageItemProps {
   message: Message;
@@ -34,7 +35,7 @@ export const MessageItem = ({ message, onDelete, onReactionUpdate, onReply, onSc
         return (
           <div className="mb-2">
             <img
-              src={message.fileUrl!}
+              src={resolveFileUrl(message.fileUrl)}
               alt="Фото"
               className="max-w-full rounded-lg"
               style={{ maxHeight: '300px' }}
@@ -53,7 +54,7 @@ export const MessageItem = ({ message, onDelete, onReactionUpdate, onReply, onSc
               className="max-w-full rounded-lg"
               style={{ maxHeight: '300px' }}
             >
-              <source src={message.fileUrl!} />
+              <source src={resolveFileUrl(message.fileUrl)} />
               Ваш браузер не поддерживает видео.
             </video>
             {message.caption && (
@@ -69,7 +70,7 @@ export const MessageItem = ({ message, onDelete, onReactionUpdate, onReply, onSc
               <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
             </svg>
             <audio controls className="flex-1">
-              <source src={message.fileUrl!} type="audio/ogg" />
+              <source src={resolveFileUrl(message.fileUrl)} type="audio/ogg" />
               Ваш браузер не поддерживает аудио.
             </audio>
           </div>
@@ -79,7 +80,7 @@ export const MessageItem = ({ message, onDelete, onReactionUpdate, onReply, onSc
         return (
           <div className="mb-2">
             <audio controls className="w-full">
-              <source src={message.fileUrl!} />
+              <source src={resolveFileUrl(message.fileUrl)} />
               Ваш браузер не поддерживает аудио.
             </audio>
             {message.caption && (
@@ -92,7 +93,7 @@ export const MessageItem = ({ message, onDelete, onReactionUpdate, onReply, onSc
         return (
           <div className="mb-2">
             <a
-              href={message.fileUrl!}
+              href={resolveFileUrl(message.fileUrl)}
               download
               className="flex items-center gap-2 text-blue-300 hover:text-blue-200 underline"
             >
@@ -109,15 +110,16 @@ export const MessageItem = ({ message, onDelete, onReactionUpdate, onReply, onSc
 
       case MessageType.STICKER: {
         // Проверяем если это анимированный стикер (.tgs)
-        const isAnimatedSticker = message.fileUrl?.endsWith('.tgs');
-        
+        const resolvedUrl = resolveFileUrl(message.fileUrl);
+        const isAnimatedSticker = resolvedUrl?.endsWith('.tgs');
+
         return (
           <div className="mb-2 flex items-center justify-center">
             {isAnimatedSticker ? (
-              <TgsSticker fileUrl={message.fileUrl!} />
+              <TgsSticker fileUrl={resolvedUrl!} />
             ) : (
               <img
-                src={message.fileUrl!}
+                src={resolvedUrl}
                 alt="Стикер"
                 className="max-w-[150px]"
                 onError={(e) => {
@@ -145,7 +147,7 @@ export const MessageItem = ({ message, onDelete, onReactionUpdate, onReply, onSc
               className="rounded-full"
               style={{ width: '200px', height: '200px' }}
             >
-              <source src={message.fileUrl!} />
+              <source src={resolveFileUrl(message.fileUrl)} />
               Ваш браузер не поддерживает видео.
             </video>
           </div>
@@ -155,7 +157,7 @@ export const MessageItem = ({ message, onDelete, onReactionUpdate, onReply, onSc
         return (
           <div className="mb-2">
             <img
-              src={message.fileUrl!}
+              src={resolveFileUrl(message.fileUrl)}
               alt="GIF"
               className="max-w-full rounded-lg"
               style={{ maxHeight: '300px' }}

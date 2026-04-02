@@ -182,12 +182,13 @@ export const ChatsPage = () => {
         unreadCount?: number;
         tags?: Tag[];
       }
+      const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '');
       const chatsData = response.data.map((chat: ChatResponse) => {
         const mappedChat = {
           id: chat.id,
           name: chat.title || chat.user?.firstName || 'Без названия',
           avatar: chat.user?.firstName?.[0]?.toUpperCase() || '?',
-          lastMessage: chat.lastMessage?.text || '',
+          lastMessage: stripHtml(chat.lastMessage?.text || ''),
           lastMessageTime: chat.lastMessageAt
             ? new Date(chat.lastMessageAt)
             : undefined,
