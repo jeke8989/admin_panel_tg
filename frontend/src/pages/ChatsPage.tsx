@@ -44,7 +44,7 @@ export const ChatsPage = () => {
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTagFilter, setSelectedTagFilter] = useState<'none' | 'hot' | 'warm' | 'cold'>('none');
+  const [selectedTagFilter, setSelectedTagFilter] = useState<'none' | 'hot' | 'warm' | 'cold' | 'blocked'>('none');
   const [tags, setTags] = useState<Tag[]>([]);
   const [scrollTrigger, setScrollTrigger] = useState(0);
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
@@ -350,6 +350,7 @@ export const ChatsPage = () => {
       hot: 0,
       warm: 0,
       cold: 0,
+      blocked: 0,
     };
 
     const totalCounts = {
@@ -357,26 +358,32 @@ export const ChatsPage = () => {
       hot: 0,
       warm: 0,
       cold: 0,
+      blocked: 0,
     };
 
     chats.forEach((chat) => {
       const unreadCount = chat.unreadCount || 0;
-      
+
+      // Заблокированные — отдельная категория
+      if (chat.isBotBlocked) {
+        unreadCounts.blocked += unreadCount;
+        totalCounts.blocked += 1;
+        return;
+      }
+
       // Определяем категорию чата (приоритет: hot > warm > cold)
       let category: 'none' | 'hot' | 'warm' | 'cold' = 'none';
-      
+
       if (chat.tags && chat.tags.length > 0) {
-        // Ищем тег категории (hot, warm, cold)
         const categoryTag = chat.tags.find(
           (tag) => tag.tagType === 'hot' || tag.tagType === 'warm' || tag.tagType === 'cold'
         );
-        
+
         if (categoryTag) {
           category = categoryTag.tagType as 'hot' | 'warm' | 'cold';
         }
       }
-      
-      // Считаем для определенной категории (каждый чат считается только один раз)
+
       unreadCounts[category] += unreadCount;
       totalCounts[category] += 1;
     });
@@ -391,18 +398,25 @@ export const ChatsPage = () => {
   const filteredChats = useMemo(() => {
     let filtered = chats;
 
-    // Фильтрация по тегам
-    if (selectedTagFilter === 'none') {
-      // "Без категории" - показываем только чаты без тегов
-      filtered = filtered.filter((chat) => {
-        return !chat.tags || chat.tags.length === 0;
-      });
+    if (selectedTagFilter === 'blocked') {
+      // Только заблокированные
+      filtered = filtered.filter((chat) => chat.isBotBlocked);
     } else {
-      // Фильтруем по выбранному типу тега
-      const tagType = selectedTagFilter;
-      filtered = filtered.filter((chat) => {
-        return chat.tags?.some((tag) => tag.tagType === tagType) || false;
-      });
+      // Сначала убираем заблокированных из всех остальных табов
+      filtered = filtered.filter((chat) => !chat.isBotBlocked);
+
+      if (selectedTagFilter === 'none') {
+        // "Без категории" - чаты без тегов
+        filtered = filtered.filter((chat) => {
+          return !chat.tags || chat.tags.length === 0;
+        });
+      } else {
+        // Фильтруем по выбранному типу тега
+        const tagType = selectedTagFilter;
+        filtered = filtered.filter((chat) => {
+          return chat.tags?.some((tag) => tag.tagType === tagType) || false;
+        });
+      }
     }
 
     // Фильтрация по поисковому запросу

@@ -1,7 +1,7 @@
 import type { Chat, Tag } from '../types';
 import { ChatItem } from './ChatItem';
 
-type TagFilterType = 'none' | 'hot' | 'warm' | 'cold';
+type TagFilterType = 'none' | 'hot' | 'warm' | 'cold' | 'blocked';
 
 interface ChatListProps {
   chats: Chat[];
@@ -17,12 +17,14 @@ interface ChatListProps {
     hot: number;
     warm: number;
     cold: number;
+    blocked: number;
   };
   totalCounts: {
     none: number;
     hot: number;
     warm: number;
     cold: number;
+    blocked: number;
   };
 }
 
@@ -140,6 +142,24 @@ export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSea
               {unreadCounts.cold > 0 && (
                 <span className="bg-blue-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1.5">
                   {unreadCounts.cold > 99 ? '99+' : unreadCounts.cold}
+                </span>
+              )}
+            </div>
+          </button>
+          <button
+            onClick={() => onTagFilterChange('blocked')}
+            className={`flex-1 px-3 text-sm font-medium transition-colors relative flex flex-col items-center justify-center whitespace-nowrap py-2 ${
+              selectedTagFilter === 'blocked'
+                ? 'text-white border-t-2 border-gray-500 bg-gray-800'
+                : 'text-gray-400 hover:text-white hover:bg-gray-700'
+            }`}
+          >
+            <span>Заблокир.</span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="text-xs text-gray-500">{totalCounts.blocked}</span>
+              {unreadCounts.blocked > 0 && (
+                <span className="bg-gray-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1.5">
+                  {unreadCounts.blocked > 99 ? '99+' : unreadCounts.blocked}
                 </span>
               )}
             </div>
