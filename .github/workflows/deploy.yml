@@ -41,8 +41,9 @@ jobs:
               --exclude='dist' \
               /root/admin_repo/frontend/ /root/admin/frontend/
 
-            # Пересобираем и запускаем
+            # Пересобираем без кэша и запускаем
             cd /root/admin
-            docker compose up -d --build
+            docker compose build --no-cache frontend backend
+            docker compose up -d
 
             echo "Deploy completed at $(date)"
