@@ -5,7 +5,33 @@ on:
     branches: [main]
 
 jobs:
-  deploy:
+  deploy-live:
+    name: Deploy to Live (telegram-panel.xyz)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LIVE_SERVER_HOST }}
+          username: ${{ secrets.LIVE_SERVER_USER }}
+          password: ${{ secrets.LIVE_SERVER_PASSWORD }}
+          script_stop: true
+          timeout: 600s
+          script: |
+            cd /root/admin_panel_tg
+            git pull origin main
+
+            # Пересобираем без кэша и запускаем
+            docker compose build --no-cache frontend backend
+            docker compose up -d
+
+            # Чистим старые образы
+            docker image prune -f
+
+            echo "Live deploy completed at $(date)"
+
+  deploy-staging:
+    name: Deploy to Staging (144.124.249.43)
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
@@ -15,19 +41,16 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           script_stop: true
-          timeout: 300s
+          timeout: 600s
           script: |
             cd /root/admin_repo
             git pull origin main
 
-            # Останавливаем старые контейнеры из /root/admin если есть
             cd /root/admin
             docker compose down || true
 
-            # Копируем docker-compose и нужные файлы
             cp /root/admin_repo/docker-compose.yml /root/admin/docker-compose.yml
 
-            # Синхронизируем backend (кроме node_modules, uploads, .env)
             rsync -a --delete \
               --exclude='node_modules' \
               --exclude='uploads' \
@@ -35,15 +58,14 @@ jobs:
               --exclude='dist' \
               /root/admin_repo/backend/ /root/admin/backend/
 
-            # Синхронизируем frontend (кроме node_modules)
             rsync -a --delete \
               --exclude='node_modules' \
               --exclude='dist' \
               /root/admin_repo/frontend/ /root/admin/frontend/
 
-            # Пересобираем без кэша и запускаем
-            cd /root/admin
             docker compose build --no-cache frontend backend
             docker compose up -d
 
-            echo "Deploy completed at $(date)"
+            docker image prune -f
+
+            echo "Staging deploy completed at $(date)"
