@@ -15,7 +15,21 @@ import type {
 const MODE = import.meta.env.VITE_APP_MODE || "dev";
 
 // Prefer explicit Vite env var if provided, otherwise fall back to default.
-let API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://api.telegram-panel.xyz/api";
+// В production backend на порту 3000
+let API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
+// Если не задан явно, определяем автоматически
+if (!API_BASE_URL) {
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    // Если localhost - используем localhost:3000, иначе - тот же хост с портом 3000
+    API_BASE_URL = hostname === 'localhost' 
+      ? 'http://localhost:3000/api'
+      : `http://${hostname}:3000/api`;
+  } else {
+    API_BASE_URL = 'http://localhost:3000/api';
+  }
+}
 
 // Normalize: if the value doesn't include a scheme (http/https), treat it as host/path
 // and prepend the current page protocol to avoid building a relative URL like

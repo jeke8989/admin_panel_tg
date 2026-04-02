@@ -31,19 +31,21 @@ export class WorkflowExecutorService {
     });
 
     // Фильтруем сценарии: 
-    // 1. Если botIds заполнен - используем его (новый способ, приоритет)
-    // 2. Иначе используем botId (старый способ)
+    // 1. Если botIds определен (не null) - используем его (новый способ, приоритет)
+    // 2. Если botIds === null - используем botId (старый способ, fallback)
     const workflows = allWorkflows.filter(workflow => {
-      const botIdsArray = Array.isArray(workflow.botIds) ? workflow.botIds : [];
-      
-      // Если botIds заполнен - используем его (приоритет над botId)
-      if (botIdsArray.length > 0) {
+      // Приоритет 1: Если botIds определен (не null), используем ЕГО
+      // Даже если массив пустой - это означает "не привязан ни к одному боту"
+      if (workflow.botIds !== null && workflow.botIds !== undefined) {
+        const botIdsArray = Array.isArray(workflow.botIds) ? workflow.botIds : [];
         const isIncluded = botIdsArray.includes(botId);
-        this.logger.debug(`Workflow ${workflow.name} - checking botIds: ${JSON.stringify(workflow.botIds)}, botId: ${botId}, included: ${isIncluded}`);
+        this.logger.debug(
+          `Workflow ${workflow.name} - checking botIds: ${JSON.stringify(workflow.botIds)}, botId: ${botId}, included: ${isIncluded}`
+        );
         return isIncluded;
       }
       
-      // Если botIds пустой - проверяем старый botId
+      // Приоритет 2: Если botIds === null (старый способ), проверяем legacy поле botId
       if (workflow.botId === botId) {
         this.logger.debug(`Workflow ${workflow.name} matched by legacy botId: ${workflow.botId}`);
         return true;

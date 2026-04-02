@@ -50,6 +50,13 @@ export const WorkflowEditor = ({ workflow, onClose }: WorkflowEditorProps) => {
   const [isActive, setIsActive] = useState(workflow.isActive || false);
   const [isToggling, setIsToggling] = useState(false);
   
+  // Обновляем состояние при смене сценария
+  useEffect(() => {
+    setWorkflowName(workflow.name || 'Новый сценарий');
+    setIsActive(workflow.isActive || false);
+    setSelectedBotIds((workflow as any).botIds || [workflow.botId].filter(Boolean));
+  }, [workflow, workflow.id, workflow.name, workflow.isActive]);
+  
   useEffect(() => {
     loadBots();
   }, []);
