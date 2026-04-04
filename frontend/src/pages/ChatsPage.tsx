@@ -49,6 +49,9 @@ export const ChatsPage = () => {
   const [scrollTrigger, setScrollTrigger] = useState(0);
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Mobile responsive state
+  const [isMobileDetailOpen, setIsMobileDetailOpen] = useState(false);
   
   // Bots state
   const [bots, setBots] = useState<(Bot & { chatCount?: number })[]>([]);
@@ -467,7 +470,8 @@ export const ChatsPage = () => {
 
   const handleChatSelect = async (chatId: string) => {
     setActiveChatId(chatId);
-    
+    setIsMobileDetailOpen(true);
+
     // Триггер для скролла (работает даже если тот же чат)
     setScrollTrigger(prev => prev + 1);
     
@@ -795,6 +799,7 @@ export const ChatsPage = () => {
 
   const handleBroadcastSelect = async (id: string) => {
     setActiveBroadcastId(id);
+    setIsMobileDetailOpen(true);
     try {
       const [broadcast, statistics] = await Promise.all([
         getBroadcastById(id),
@@ -810,6 +815,7 @@ export const ChatsPage = () => {
   const handleWorkflowSelect = async (id: string) => {
     try {
       setActiveWorkflowId(id);
+      setIsMobileDetailOpen(true);
       const workflow = await getWorkflowById(id);
       console.log('[ChatsPage] Workflow loaded:', workflow);
       setSelectedWorkflow(workflow);
@@ -887,6 +893,11 @@ export const ChatsPage = () => {
 
   const handleBotSelect = (botId: string) => {
     setActiveBotId(botId);
+    setIsMobileDetailOpen(true);
+  };
+
+  const handleMobileBack = () => {
+    setIsMobileDetailOpen(false);
   };
 
   const handleAddBot = () => {
@@ -956,8 +967,10 @@ export const ChatsPage = () => {
   return (
     <div className="h-screen flex flex-col bg-gray-900">
       {/* Хедер всегда видим */}
-      <div className="w-full p-4 border-b border-gray-700 bg-gray-800 flex items-center justify-between flex-shrink-0">
-        <h1 className="text-white text-xl font-semibold">Чаты</h1>
+      <div className="w-full px-4 py-3 border-b border-gray-700 bg-gray-800 flex items-center justify-between flex-shrink-0">
+        <h1 className="text-white text-xl font-semibold">
+          {activeTab === 'chats' ? 'Чаты' : activeTab === 'broadcasts' ? 'Рассылки' : activeTab === 'workflows' ? 'Сценарии' : 'Боты'}
+        </h1>
         <button
           onClick={logout}
           className="text-gray-400 hover:text-white text-sm px-3 py-1 rounded hover:bg-gray-700 transition-colors"
@@ -968,7 +981,7 @@ export const ChatsPage = () => {
 
       <div className="flex-1 flex overflow-hidden">
         <>
-          <div className="w-1/3 min-w-[320px] max-w-[400px] flex flex-col border-r border-gray-700">
+          <div className={`w-full md:w-1/3 md:min-w-[320px] md:max-w-[400px] flex flex-col border-r border-gray-700 ${isMobileDetailOpen ? 'hidden md:flex' : 'flex'}`}>
             {/* Табы */}
             <Tabs activeTab={activeTab} onTabChange={handleTabChange} role={admin?.role} />
             
@@ -1033,7 +1046,17 @@ export const ChatsPage = () => {
             </div>
             
             {/* Правая панель */}
-            <div className="flex-1 h-full overflow-hidden">
+            <div className={`flex-1 h-full overflow-hidden ${isMobileDetailOpen ? 'flex flex-col' : 'hidden md:flex md:flex-col'}`}>
+              {/* Кнопка назад на мобильном */}
+              <button
+                onClick={handleMobileBack}
+                className="md:hidden flex items-center gap-2 px-4 py-2 text-gray-400 hover:text-white bg-gray-800 border-b border-gray-700 flex-shrink-0"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Назад
+              </button>
               {activeTab === 'chats' ? (
                 <ChatWindow
                   chat={activeChat}

@@ -73,16 +73,17 @@ export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSea
       </div>
       {/* Табы фильтрации по тегам внизу */}
       <div className="border-t border-gray-700 bg-gray-800 flex-shrink-0 sticky bottom-0 z-10">
-        <div className="flex" style={{ minHeight: '56px' }}>
+        <div className="flex" style={{ minHeight: '48px' }}>
           <button
             onClick={() => onTagFilterChange('none')}
-            className={`flex-1 px-3 text-sm font-medium transition-colors relative flex flex-col items-center justify-center whitespace-nowrap py-2 ${
+            className={`flex-1 px-1 md:px-3 text-[11px] md:text-sm font-medium transition-colors relative flex flex-col items-center justify-center whitespace-nowrap py-1.5 md:py-2 ${
               selectedTagFilter === 'none'
                 ? 'text-white border-t-2 border-blue-500 bg-gray-800'
                 : 'text-gray-400 hover:text-white hover:bg-gray-700'
             }`}
           >
-            <span>Без категории</span>
+            <span className="hidden md:inline">Без категории</span>
+            <span className="md:hidden">Все</span>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="text-xs text-gray-500">{totalCounts.none}</span>
               {unreadCounts.none > 0 && (
@@ -94,7 +95,7 @@ export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSea
           </button>
           <button
             onClick={() => onTagFilterChange('hot')}
-            className={`flex-1 px-3 text-sm font-medium transition-colors relative flex flex-col items-center justify-center whitespace-nowrap py-2 ${
+            className={`flex-1 px-1 md:px-3 text-[11px] md:text-sm font-medium transition-colors relative flex flex-col items-center justify-center whitespace-nowrap py-1.5 md:py-2 ${
               selectedTagFilter === 'hot'
                 ? 'text-white border-t-2 border-red-500 bg-gray-800'
                 : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -112,7 +113,7 @@ export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSea
           </button>
           <button
             onClick={() => onTagFilterChange('warm')}
-            className={`flex-1 px-3 text-sm font-medium transition-colors relative flex flex-col items-center justify-center whitespace-nowrap py-2 ${
+            className={`flex-1 px-1 md:px-3 text-[11px] md:text-sm font-medium transition-colors relative flex flex-col items-center justify-center whitespace-nowrap py-1.5 md:py-2 ${
               selectedTagFilter === 'warm'
                 ? 'text-white border-t-2 border-yellow-500 bg-gray-800'
                 : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -130,7 +131,7 @@ export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSea
           </button>
           <button
             onClick={() => onTagFilterChange('cold')}
-            className={`flex-1 px-3 text-sm font-medium transition-colors relative flex flex-col items-center justify-center whitespace-nowrap py-2 ${
+            className={`flex-1 px-1 md:px-3 text-[11px] md:text-sm font-medium transition-colors relative flex flex-col items-center justify-center whitespace-nowrap py-1.5 md:py-2 ${
               selectedTagFilter === 'cold'
                 ? 'text-white border-t-2 border-blue-500 bg-gray-800'
                 : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -148,7 +149,7 @@ export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSea
           </button>
           <button
             onClick={() => onTagFilterChange('blocked')}
-            className={`flex-1 px-3 text-sm font-medium transition-colors relative flex flex-col items-center justify-center whitespace-nowrap py-2 ${
+            className={`flex-1 px-1 md:px-3 text-[11px] md:text-sm font-medium transition-colors relative flex flex-col items-center justify-center whitespace-nowrap py-1.5 md:py-2 ${
               selectedTagFilter === 'blocked'
                 ? 'text-white border-t-2 border-gray-500 bg-gray-800'
                 : 'text-gray-400 hover:text-white hover:bg-gray-700'

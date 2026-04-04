@@ -369,7 +369,7 @@ export const WorkflowEditor = ({ workflow, onClose }: WorkflowEditorProps) => {
       {/* Editor Area */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Sidebar */}
-        <div className="w-64 bg-gray-800 border-r border-gray-700 p-4 overflow-y-auto">
+        <div className="hidden md:block w-64 bg-gray-800 border-r border-gray-700 p-4 overflow-y-auto">
           <h3 className="text-white font-medium mb-4">Инструменты</h3>
           
           <div className="space-y-4">
