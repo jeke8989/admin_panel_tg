@@ -91,6 +91,43 @@ export class AuthService {
     };
   }
 
+  generateMagicToken(chatId: string): string {
+    // Берём первого админа с ролью admin для magic link
+    return this.jwtService.sign(
+      { type: 'magic', chatId },
+      { expiresIn: '72h' },
+    );
+  }
+
+  async verifyMagicToken(token: string): Promise<{ accessToken: string; chatId: string }> {
+    try {
+      const payload = this.jwtService.verify(token);
+      if (payload.type !== 'magic') {
+        throw new UnauthorizedException('Недействительный magic token');
+      }
+
+      // Находим первого админа
+      const admin = await this.adminRepository.findOne({
+        where: { role: 'admin' },
+      });
+
+      if (!admin) {
+        throw new UnauthorizedException('Админ не найден');
+      }
+
+      const accessToken = this.jwtService.sign({
+        email: admin.email,
+        sub: admin.id,
+        role: admin.role,
+      });
+
+      return { accessToken, chatId: payload.chatId };
+    } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
+      throw new UnauthorizedException('Magic link истёк или недействителен');
+    }
+  }
+
   async seed() {
     console.log('Seeding data...');
 

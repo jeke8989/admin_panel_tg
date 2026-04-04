@@ -12,6 +12,7 @@ import { BroadcastRecipient } from '../entities/BroadcastRecipient.entity';
 import { BotWorkflow } from '../entities/BotWorkflow.entity';
 import { Tag, TagType } from '../entities/Tag.entity';
 import { WorkflowExecutorService } from '../workflows/workflow-executor.service';
+import { JwtService } from '@nestjs/jwt';
 import * as iconv from 'iconv-lite';
 
 @Injectable()
@@ -39,6 +40,7 @@ export class TelegramService implements OnModuleInit {
     @Inject(forwardRef(() => WorkflowExecutorService))
     private workflowExecutor: WorkflowExecutorService,
     private dataSource: DataSource,
+    private jwtService: JwtService,
   ) {}
 
   async onModuleInit() {
@@ -1847,11 +1849,15 @@ export class TelegramService implements OnModuleInit {
         parse_mode: 'HTML',
       };
 
-      // Magic link — кнопка "Открыть чат" ведёт в админку
+      // Magic link — кнопка "Открыть чат" с автоавторизацией
       if (chatId) {
+        const magicToken = this.jwtService.sign(
+          { type: 'magic', chatId },
+          { expiresIn: '72h' },
+        );
         options.reply_markup = {
           inline_keyboard: [[
-            { text: '💬 Открыть чат', url: `https://telegram-panel.xyz/dashboard?tab=chats&chatId=${chatId}` },
+            { text: '💬 Открыть чат', url: `https://telegram-panel.xyz/dashboard?tab=chats&chatId=${chatId}&magic=${magicToken}` },
           ]],
         };
       }

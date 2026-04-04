@@ -25,20 +25,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Проверяем, есть ли сохраненный токен и админ
-    const savedAdmin = localStorage.getItem('admin');
-    const savedToken = localStorage.getItem('accessToken');
-
-    if (savedAdmin && savedToken) {
-      try {
-        setAdmin(JSON.parse(savedAdmin));
-      } catch (error) {
-        console.error('Error parsing saved admin:', error);
-        localStorage.removeItem('admin');
-        localStorage.removeItem('accessToken');
+    const tryMagicLogin = async () => {
+      // Проверяем magic token в URL
+      const params = new URLSearchParams(window.location.search);
+      const magicToken = params.get('magic');
+      if (magicToken) {
+        try {
+          const response = await api.get(`/auth/magic?token=${magicToken}`);
+          const { accessToken, chatId } = response.data;
+          localStorage.setItem('accessToken', accessToken);
+          // Декодируем JWT чтобы получить данные админа
+          const payload = JSON.parse(atob(accessToken.split('.')[1]));
+          const adminData = { id: payload.sub, email: payload.email, role: payload.role };
+          localStorage.setItem('admin', JSON.stringify(adminData));
+          setAdmin(adminData);
+          // Убираем magic из URL, оставляем chatId
+          const cleanUrl = `${window.location.pathname}?tab=chats&chatId=${chatId}`;
+          window.history.replaceState({}, '', cleanUrl);
+          setIsLoading(false);
+          return;
+        } catch (error) {
+          console.error('Magic login failed:', error);
+        }
       }
-    }
-    setIsLoading(false);
+
+      // Обычная проверка сохранённого токена
+      const savedAdmin = localStorage.getItem('admin');
+      const savedToken = localStorage.getItem('accessToken');
+      if (savedAdmin && savedToken) {
+        try {
+          setAdmin(JSON.parse(savedAdmin));
+        } catch (error) {
+          console.error('Error parsing saved admin:', error);
+          localStorage.removeItem('admin');
+          localStorage.removeItem('accessToken');
+        }
+      }
+      setIsLoading(false);
+    };
+
+    tryMagicLogin();
   }, []);
 
   const getErrorMessage = (error: any): string => {
