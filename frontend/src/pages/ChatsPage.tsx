@@ -399,45 +399,38 @@ export const ChatsPage = () => {
 
   // Фильтрация чатов по поисковому запросу и тегам
   const filteredChats = useMemo(() => {
-    let filtered = chats;
+    const query = searchQuery.toLowerCase().trim();
 
-    if (selectedTagFilter === 'blocked') {
-      // Только заблокированные
-      filtered = filtered.filter((chat) => chat.isBotBlocked);
-    } else {
-      // Сначала убираем заблокированных из всех остальных табов
-      filtered = filtered.filter((chat) => !chat.isBotBlocked);
-
-      if (selectedTagFilter === 'none') {
-        // "Без категории" - чаты без тегов
-        filtered = filtered.filter((chat) => {
-          return !chat.tags || chat.tags.length === 0;
-        });
-      } else {
-        // Фильтруем по выбранному типу тега
-        const tagType = selectedTagFilter;
-        filtered = filtered.filter((chat) => {
-          return chat.tags?.some((tag) => tag.tagType === tagType) || false;
-        });
-      }
+    // Если есть поисковый запрос — ищем по ВСЕМ чатам, игнорируя категории
+    if (query) {
+      return chats.filter((chat) => {
+        if (chat.name.toLowerCase().includes(query)) return true;
+        if (chat.lastMessage.toLowerCase().includes(query)) return true;
+        if (chat.botUsername && chat.botUsername.toLowerCase().includes(query)) return true;
+        // Поиск по никнейму пользователя (@username)
+        if (chat.user?.username && chat.user.username.toLowerCase().includes(query)) return true;
+        // Поиск по startParam
+        if (chat.user?.startParam && chat.user.startParam.toLowerCase().includes(query)) return true;
+        return false;
+      });
     }
 
-    // Фильтрация по поисковому запросу
-    if (!searchQuery.trim()) return filtered;
-    
-    const query = searchQuery.toLowerCase().trim();
-    return filtered.filter((chat) => {
-      // Поиск по названию чата
-      if (chat.name.toLowerCase().includes(query)) return true;
-      
-      // Поиск по последнему сообщению
-      if (chat.lastMessage.toLowerCase().includes(query)) return true;
-      
-      // Поиск по названию бота
-      if (chat.botUsername && chat.botUsername.toLowerCase().includes(query)) return true;
-      
-      return false;
-    });
+    // Без поискового запроса — фильтруем по категориям
+    if (selectedTagFilter === 'blocked') {
+      return chats.filter((chat) => chat.isBotBlocked);
+    }
+
+    // Убираем заблокированных из остальных табов
+    let filtered = chats.filter((chat) => !chat.isBotBlocked);
+
+    if (selectedTagFilter === 'none') {
+      filtered = filtered.filter((chat) => !chat.tags || chat.tags.length === 0);
+    } else {
+      const tagType = selectedTagFilter;
+      filtered = filtered.filter((chat) => chat.tags?.some((tag) => tag.tagType === tagType) || false);
+    }
+
+    return filtered;
   }, [chats, searchQuery, selectedTagFilter]);
 
   const activeChat = useMemo(() => {
