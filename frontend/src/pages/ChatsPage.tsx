@@ -99,7 +99,13 @@ export const ChatsPage = () => {
 
   useEffect(() => {
     loadTags();
-    loadChats();
+    loadChats().then(() => {
+      // Если в URL есть chatId — открываем этот чат (magic link из уведомлений)
+      const chatIdFromUrl = searchParams.get('chatId');
+      if (chatIdFromUrl) {
+        handleChatSelect(chatIdFromUrl);
+      }
+    });
     // Автообновление списка чатов каждые 15 секунд (оптимизация нагрузки на сервер)
     const chatsInterval = setInterval(() => {
       loadChats();

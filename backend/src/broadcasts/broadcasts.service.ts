@@ -340,17 +340,17 @@ export class BroadcastsService {
       ])
       .getRawMany();
 
-    // Группируем по пользователям и выбираем один чат на пользователя (самый свежий)
-    const userChatMap = new Map<
+    // Группируем по пользователю + боту — один пользователь может быть в нескольких ботах
+    const recipientMap = new Map<
       string,
       { user: User; chat: Chat; bot: Bot }
     >();
 
     for (const row of results) {
-      const userId = row.user_id;
-      if (!userChatMap.has(userId)) {
+      const key = `${row.user_id}_${row.bot_id}`;
+      if (!recipientMap.has(key)) {
         const user = await this.userRepository.findOne({
-          where: { id: userId },
+          where: { id: row.user_id },
         });
         const chat = await this.chatRepository.findOne({
           where: { id: row.chat_id },
@@ -361,12 +361,12 @@ export class BroadcastsService {
         });
 
         if (user && chat && bot) {
-          userChatMap.set(userId, { user, chat, bot });
+          recipientMap.set(key, { user, chat, bot });
         }
       }
     }
 
-    return Array.from(userChatMap.values());
+    return Array.from(recipientMap.values());
   }
 
   async createRecipients(
@@ -630,6 +630,29 @@ export class BroadcastsService {
     this.logger.log(
       `Рассылка ${broadcastId} завершена. Отправлено: ${sentCount}, Доставлено: ${deliveredCount}`,
     );
+
+    // Уведомляем все группы ботов о завершении рассылки
+    const botIds = [...new Set(recipients.map(r => r.botId))];
+    for (const botId of botIds) {
+      try {
+        const bot = await this.botRepository.findOne({ where: { id: botId } });
+        if (bot?.notificationGroupId) {
+          const botRecipients = recipients.filter(r => r.botId === botId);
+          const botSent = botRecipients.filter(r => r.status === BroadcastRecipientStatus.SENT).length;
+          const botFailed = botRecipients.filter(r => r.status === BroadcastRecipientStatus.FAILED).length;
+
+          const notificationText = `📢 <b>Рассылка завершена</b>\n\n📝 ${broadcast.name || 'Без названия'}\n✅ Доставлено: ${botSent}\n❌ Ошибок: ${botFailed}\n👥 Всего: ${botRecipients.length}`;
+
+          await this.telegramService.sendMessage(
+            botId,
+            parseInt(bot.notificationGroupId, 10),
+            notificationText,
+          );
+        }
+      } catch (err) {
+        this.logger.error(`Ошибка при отправке уведомления о рассылке в группу бота ${botId}:`, err);
+      }
+    }
   }
 
   async getBroadcasts(adminId?: string): Promise<Broadcast[]> {

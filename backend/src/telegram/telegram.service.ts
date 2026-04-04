@@ -418,8 +418,10 @@ export class TelegramService implements OnModuleInit {
 
       this.logger.log(`Получено текстовое сообщение от ${user.firstName} в чате ${chat.id}`);
 
-      // Отправляем уведомление в группу, если настроено
-      await this.sendNotificationToGroup(botId, user, telegramMessage.text);
+      // Отправляем уведомление в группу, если настроено (кроме /start)
+      if (!telegramMessage.text.startsWith('/start')) {
+        await this.sendNotificationToGroup(botId, user, telegramMessage.text, chat.id);
+      }
 
       // Execute Workflow
       const isCommand = telegramMessage.text.startsWith('/');
@@ -1824,7 +1826,7 @@ export class TelegramService implements OnModuleInit {
   /**
    * Отправляет уведомление в группу при получении сообщения от пользователя
    */
-  private async sendNotificationToGroup(botId: string, user: User, messageText: string) {
+  private async sendNotificationToGroup(botId: string, user: User, messageText: string, chatId?: string) {
     try {
       const bot = await this.botRepository.findOne({ where: { id: botId } });
       if (!bot || !bot.notificationGroupId) {
@@ -1841,14 +1843,24 @@ export class TelegramService implements OnModuleInit {
       const username = user.username ? `@${user.username}` : user.firstName;
       const notificationText = `👤 <b>${username}</b>\n\n${messageText}`;
 
-      await telegrafBot.telegram.sendMessage(groupId, notificationText, {
+      const options: Record<string, unknown> = {
         parse_mode: 'HTML',
-      });
+      };
+
+      // Magic link — кнопка "Открыть чат" ведёт в админку
+      if (chatId) {
+        options.reply_markup = {
+          inline_keyboard: [[
+            { text: '💬 Открыть чат', url: `https://telegram-panel.xyz/dashboard?tab=chats&chatId=${chatId}` },
+          ]],
+        };
+      }
+
+      await telegrafBot.telegram.sendMessage(groupId, notificationText, options);
 
       this.logger.log(`Уведомление отправлено в группу ${groupId} от пользователя ${username}`);
     } catch (error) {
       this.logger.error(`Ошибка при отправке уведомления в группу:`, error);
-      // Не прерываем выполнение, если уведомление не отправилось
     }
   }
 }
