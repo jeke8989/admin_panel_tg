@@ -16,12 +16,33 @@ jobs:
           username: ${{ secrets.LIVE_SERVER_USER }}
           password: ${{ secrets.LIVE_SERVER_PASSWORD }}
           script_stop: true
-          timeout: 600s
+          timeout: 1200s
+          command_timeout: 20m
           script: |
             cd /root/admin_panel_tg
-            git pull origin main
 
-            docker compose build --no-cache frontend backend
+            # Запоминаем текущий коммит
+            OLD_COMMIT=$(git rev-parse HEAD)
+            git pull origin main
+            NEW_COMMIT=$(git rev-parse HEAD)
+
+            # Проверяем что изменилось
+            BACKEND_CHANGED=$(git diff --name-only $OLD_COMMIT $NEW_COMMIT -- backend/ | head -1)
+            FRONTEND_CHANGED=$(git diff --name-only $OLD_COMMIT $NEW_COMMIT -- frontend/ | head -1)
+
+            if [ -n "$FRONTEND_CHANGED" ] && [ -n "$BACKEND_CHANGED" ]; then
+              echo "Both changed, rebuilding all..."
+              docker compose build --no-cache frontend backend
+            elif [ -n "$FRONTEND_CHANGED" ]; then
+              echo "Only frontend changed..."
+              docker compose build --no-cache frontend
+            elif [ -n "$BACKEND_CHANGED" ]; then
+              echo "Only backend changed..."
+              docker compose build --no-cache backend
+            else
+              echo "No frontend/backend changes, skipping build"
+            fi
+
             docker compose up -d
 
             docker image prune -f
