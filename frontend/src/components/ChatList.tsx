@@ -1,3 +1,4 @@
+import { useRef, useCallback } from 'react';
 import type { Chat, Tag } from '../types';
 import { ChatItem } from './ChatItem';
 
@@ -26,9 +27,22 @@ interface ChatListProps {
     cold: number;
     blocked: number;
   };
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
 }
 
-export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSearchChange, selectedTagFilter, onTagFilterChange, unreadCounts, totalCounts }: ChatListProps) => {
+export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSearchChange, selectedTagFilter, onTagFilterChange, unreadCounts, totalCounts, onLoadMore, hasMore, isLoadingMore }: ChatListProps) => {
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = useCallback(() => {
+    const el = listRef.current;
+    if (!el || !onLoadMore || !hasMore || isLoadingMore) return;
+    // Подгружаем когда до конца осталось 200px
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+      onLoadMore();
+    }
+  }, [onLoadMore, hasMore, isLoadingMore]);
   return (
     <div className="flex flex-col h-full bg-gray-800 overflow-hidden">
       <div className="flex items-center gap-3 p-4 border-b border-gray-700 bg-gray-800">
@@ -55,20 +69,25 @@ export const ChatList = ({ chats, activeChatId, onChatSelect, searchQuery, onSea
           </svg>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" ref={listRef} onScroll={handleScroll}>
         {chats.length === 0 ? (
           <div className="h-full w-full flex items-center justify-center text-gray-500">
             <p>Нет чатов</p>
           </div>
         ) : (
-          chats.map((chat) => (
-            <ChatItem
-              key={chat.id}
-              chat={chat}
-              isActive={chat.id === activeChatId}
-              onClick={() => onChatSelect(chat.id)}
-            />
-          ))
+          <>
+            {chats.map((chat) => (
+              <ChatItem
+                key={chat.id}
+                chat={chat}
+                isActive={chat.id === activeChatId}
+                onClick={() => onChatSelect(chat.id)}
+              />
+            ))}
+            {isLoadingMore && (
+              <div className="p-3 text-center text-gray-500 text-sm">Загрузка...</div>
+            )}
+          </>
         )}
       </div>
       {/* Табы фильтрации по тегам внизу */}

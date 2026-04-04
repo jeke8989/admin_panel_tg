@@ -53,8 +53,7 @@ export class ChatsService {
     private telegramService: TelegramService,
   ) {}
 
-  async findAll(tagId?: string) {
-    this.logger.log(`[DEBUG_CHATS] findAll called with tagId: ${tagId}`);
+  async findAll(tagId?: string, limit = 50, offset = 0) {
     const queryBuilder = this.chatRepository
       .createQueryBuilder('chat')
       .innerJoinAndSelect('chat.bot', 'bot')
@@ -63,8 +62,6 @@ export class ChatsService {
       .leftJoinAndSelect('chat.lastMessage', 'lastMessage')
       .leftJoinAndSelect('lastMessage.sender', 'sender')
       .leftJoinAndSelect('chat.tags', 'tags')
-      // Оптимизация: используем loadRelationCountAndMap для подсчета непрочитанных сообщений
-      // Это заменяет N отдельных запросов COUNT на один эффективный подзапрос
       .loadRelationCountAndMap(
         'chat.unreadCount',
         'chat.messages',
@@ -79,24 +76,13 @@ export class ChatsService {
       queryBuilder.andWhere('tags.id = :tagId', { tagId });
     }
 
-    const chats = await queryBuilder
+    const [chats, total] = await queryBuilder
       .orderBy('chat.lastMessageAt', 'DESC')
-      .getMany();
+      .skip(offset)
+      .take(limit)
+      .getManyAndCount();
 
-    if (chats.length > 0) {
-      this.logger.log(`[DEBUG_CHATS] Found ${chats.length} chats.`);
-      const chatWithUser = chats.find(c => c.user);
-      if (chatWithUser) {
-         this.logger.log(`[DEBUG_CHATS] First user: ${JSON.stringify(chatWithUser.user)}`);
-      } else {
-         this.logger.log('[DEBUG_CHATS] No chats with user relation found.');
-      }
-    } else {
-       this.logger.log('[DEBUG_CHATS] No chats found.');
-    }
-
-    // unreadCount уже добавлен через loadRelationCountAndMap
-    return chats;
+    return { chats, total, hasMore: offset + limit < total };
   }
 
   async findMessagesByChatId(chatId: string, dto: GetMessagesDto) {

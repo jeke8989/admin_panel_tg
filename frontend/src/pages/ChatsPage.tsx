@@ -49,6 +49,8 @@ export const ChatsPage = () => {
   const [scrollTrigger, setScrollTrigger] = useState(0);
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [hasMoreChats, setHasMoreChats] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // Mobile responsive state
   const [isMobileDetailOpen, setIsMobileDetailOpen] = useState(false);
@@ -169,62 +171,72 @@ export const ChatsPage = () => {
     }
   };
 
+  interface ChatResponse {
+    id: string;
+    title?: string | null;
+    user?: {
+      id?: string;
+      firstName?: string;
+      startParam?: string | null;
+      telegramId?: number;
+      username?: string | null;
+      lastName?: string | null;
+    };
+    lastMessage?: { text?: string };
+    lastMessageAt?: string | null;
+    bot?: { username?: string | null };
+    isBotBlocked?: boolean;
+    unreadCount?: number;
+    tags?: Tag[];
+  }
+
+  const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '');
+
+  const mapChat = (chat: ChatResponse) => ({
+    id: chat.id,
+    name: chat.title || chat.user?.firstName || 'Без названия',
+    avatar: chat.user?.firstName?.[0]?.toUpperCase() || '?',
+    lastMessage: stripHtml(chat.lastMessage?.text || ''),
+    lastMessageTime: chat.lastMessageAt ? new Date(chat.lastMessageAt) : undefined,
+    unreadCount: chat.unreadCount || 0,
+    botUsername: chat.bot?.username,
+    isBotBlocked: chat.isBotBlocked || false,
+    tags: chat.tags || [],
+    user: chat.user ? {
+      id: chat.user.id || '',
+      telegramId: chat.user.telegramId || 0,
+      username: chat.user.username || null,
+      firstName: chat.user.firstName || '',
+      lastName: chat.user.lastName || null,
+      startParam: chat.user.startParam || null,
+    } : undefined,
+  });
+
   const loadChats = async () => {
     try {
-      // Всегда загружаем все чаты, фильтрация происходит на фронтенде
-      const response = await api.get('/chats');
-      interface ChatResponse {
-        id: string;
-        title?: string | null;
-        user?: { 
-          id?: string;
-          firstName?: string; 
-          startParam?: string | null;
-          telegramId?: number;
-          username?: string | null;
-          lastName?: string | null;
-        };
-        lastMessage?: { text?: string };
-        lastMessageAt?: string | null;
-        bot?: { username?: string | null };
-        isBotBlocked?: boolean;
-        unreadCount?: number;
-        tags?: Tag[];
-      }
-      const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '');
-      const chatsData = response.data.map((chat: ChatResponse) => {
-        const mappedChat = {
-          id: chat.id,
-          name: chat.title || chat.user?.firstName || 'Без названия',
-          avatar: chat.user?.firstName?.[0]?.toUpperCase() || '?',
-          lastMessage: stripHtml(chat.lastMessage?.text || ''),
-          lastMessageTime: chat.lastMessageAt
-            ? new Date(chat.lastMessageAt)
-            : undefined,
-          unreadCount: chat.unreadCount || 0,
-          botUsername: chat.bot?.username,
-          isBotBlocked: chat.isBotBlocked || false,
-          tags: chat.tags || [],
-          user: chat.user ? {
-            id: chat.user.id || '',
-            telegramId: chat.user.telegramId || 0,
-            username: chat.user.username || null,
-            firstName: chat.user.firstName || '',
-            lastName: chat.user.lastName || null,
-            startParam: chat.user.startParam || null,
-          } : undefined,
-        };
-        // Отладка: выводим startParam если он есть
-        if (mappedChat.user?.startParam) {
-          console.log(`[DEBUG] Chat ${mappedChat.name} has startParam:`, mappedChat.user.startParam);
-        }
-        return mappedChat;
-      });
-      setChats(chatsData);
+      const response = await api.get('/chats?limit=50&offset=0');
+      const { chats: rawChats, hasMore } = response.data;
+      setChats(rawChats.map(mapChat));
+      setHasMoreChats(hasMore);
     } catch (error) {
       console.error('Error loading chats:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadMoreChats = async () => {
+    if (isLoadingMore || !hasMoreChats) return;
+    setIsLoadingMore(true);
+    try {
+      const response = await api.get(`/chats?limit=50&offset=${chats.length}`);
+      const { chats: rawChats, hasMore } = response.data;
+      setChats(prev => [...prev, ...rawChats.map(mapChat)]);
+      setHasMoreChats(hasMore);
+    } catch (error) {
+      console.error('Error loading more chats:', error);
+    } finally {
+      setIsLoadingMore(false);
     }
   };
 
@@ -1002,6 +1014,9 @@ export const ChatsPage = () => {
                     onTagFilterChange={setSelectedTagFilter}
                     unreadCounts={unreadCountsByCategory.unread}
                     totalCounts={unreadCountsByCategory.total}
+                    onLoadMore={loadMoreChats}
+                    hasMore={hasMoreChats}
+                    isLoadingMore={isLoadingMore}
                   />
                 )
               ) : activeTab === 'broadcasts' ? (

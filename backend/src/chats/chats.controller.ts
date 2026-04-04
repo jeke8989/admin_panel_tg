@@ -29,8 +29,16 @@ export class ChatsController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  findAll(@Query('tagId') tagId?: string) {
-    return this.chatsService.findAll(tagId);
+  findAll(
+    @Query('tagId') tagId?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.chatsService.findAll(
+      tagId,
+      limit ? parseInt(limit, 10) : 50,
+      offset ? parseInt(offset, 10) : 0,
+    );
   }
 
   @Get('test-route')
