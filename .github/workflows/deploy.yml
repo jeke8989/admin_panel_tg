@@ -5,8 +5,8 @@ on:
     branches: [main]
 
 jobs:
-  deploy-live:
-    name: Deploy to Live (telegram-panel.xyz)
+  deploy:
+    name: Deploy to telegram-panel.xyz
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
@@ -21,51 +21,9 @@ jobs:
             cd /root/admin_panel_tg
             git pull origin main
 
-            # Пересобираем без кэша и запускаем
-            docker compose build --no-cache frontend backend
-            docker compose up -d
-
-            # Чистим старые образы
-            docker image prune -f
-
-            echo "Live deploy completed at $(date)"
-
-  deploy-staging:
-    name: Deploy to Staging (144.124.249.43)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          password: ${{ secrets.SERVER_PASSWORD }}
-          script_stop: true
-          timeout: 600s
-          script: |
-            cd /root/admin_repo
-            git pull origin main
-
-            cd /root/admin
-            docker compose down || true
-
-            cp /root/admin_repo/docker-compose.yml /root/admin/docker-compose.yml
-
-            rsync -a --delete \
-              --exclude='node_modules' \
-              --exclude='uploads' \
-              --exclude='.env' \
-              --exclude='dist' \
-              /root/admin_repo/backend/ /root/admin/backend/
-
-            rsync -a --delete \
-              --exclude='node_modules' \
-              --exclude='dist' \
-              /root/admin_repo/frontend/ /root/admin/frontend/
-
             docker compose build --no-cache frontend backend
             docker compose up -d
 
             docker image prune -f
 
-            echo "Staging deploy completed at $(date)"
+            echo "Deploy completed at $(date)"
